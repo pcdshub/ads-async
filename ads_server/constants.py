@@ -289,6 +289,46 @@ class AdsError(enum.IntEnum):
     CLIENT_SYNCPORTLOCKED = (0x55 + ERR_ADSERRS)
 
 
+class AdsDataType(enum.IntEnum):
+    VOID = 0
+    INT8 = 16
+    UINT8 = 17
+    INT16 = 2
+    UINT16 = 18
+    INT32 = 3
+    UINT32 = 19
+    INT64 = 20
+    UINT64 = 21
+    REAL32 = 4
+    REAL64 = 5
+    BIGTYPE = 65
+    STRING = 30
+    WSTRING = 31
+    REAL80 = 32
+    BIT = 33
+    MAXTYPES = 34
+
+
+data_type_to_ctypes = {
+    # AdsDataType.VOID: None,
+    AdsDataType.INT8: ctypes.c_int8,
+    AdsDataType.UINT8: ctypes.c_uint8,
+    AdsDataType.INT16: ctypes.c_int16,
+    AdsDataType.UINT16: ctypes.c_uint16,
+    AdsDataType.INT32: ctypes.c_int32,
+    AdsDataType.UINT32: ctypes.c_uint32,
+    AdsDataType.INT64: ctypes.c_int64,
+    AdsDataType.UINT64: ctypes.c_uint64,
+    AdsDataType.REAL32: ctypes.c_float,
+    AdsDataType.REAL64: ctypes.c_double,
+    # AdsDataType.BIGTYPE: None,
+    AdsDataType.STRING: ctypes.c_char,
+    AdsDataType.WSTRING: ctypes.c_wchar,
+    # AdsDataType.REAL80
+    AdsDataType.BIT: ctypes.c_bool,
+}
+
+
 class AdsTransMode(enum.IntEnum):
     NOTRANS = 0
     CLIENTCYCLE = 1
@@ -347,6 +387,27 @@ class _AdsStructBase(ctypes.LittleEndianStructure):
         formatted_args = ", ".join(f"{k!s}={v!r}"
                                    for k, v in self.to_dict().items())
         return f"{self.__class__.__name__}({formatted_args})"
+
+
+def _create_enum_property(field_name: str,
+                          enum_cls: enum.Enum,
+                          *,
+                          doc: str = None,
+                          strict_set: bool = True):
+    """
+    """
+
+    def fget(self):
+        return enum_cls(getattr(self, field_name))
+
+    def fset(self, value):
+        if strict_set:
+            # Raises ValueError if invalid
+            value = enum_cls(value).value
+
+        setattr(self, field_name, value)
+
+    return property(fget, fset, doc=doc)
 
 
 class AmsNetId(_AdsStructBase):
@@ -469,7 +530,7 @@ class AdsNotificationAttrib(_AdsStructBase):
         #  invoked cyclically.
         #  AdsTransMode.SERVERONCHA: The notification's callback function is
         #  only invoked when the value changes.
-        ('transmission_mode', ctypes.c_uint32),
+        ('_transmission_mode', ctypes.c_uint32),
 
         # The notification's callback function is invoked at the latest when
         # this time has elapsed. The unit is 100 ns.
@@ -480,6 +541,11 @@ class AdsNotificationAttrib(_AdsStructBase):
         # "change_filter" in certain scenarios.
         ('cycle_time', ctypes.c_uint32),
     ]
+
+    transmission_mode = _create_enum_property(
+        '_transmission_mode', AdsTransMode,
+        doc='Transmission mode settings (see AdsTransMode)',
+    )
 
 
 class AdsNotificationHeader(_AdsStructBase):
@@ -540,12 +606,10 @@ class AdsSymbolEntry(_AdsStructBase):
         ('comment_length', ctypes.c_uint16),
     ]
 
-# *
-#  @brief This structure is used to provide ADS symbol information for ADS SUM commands
-# /
-
 
 class AdsSymbolInfoByName(_AdsStructBase):
+    """Used to provide ADS symbol information for ADS SUM commands."""
+
     _fields_ = [
         # indexGroup of symbol: input, output etc.
         ('index_group', ctypes.c_uint32),
