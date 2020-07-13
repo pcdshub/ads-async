@@ -227,13 +227,15 @@ class AdsNotificationHeader(_AdsStructBase):
     ]
 
 # *
-#  @brief Type definition of the callback function required by the AdsSyncAddDeviceNotificationReqEx() function.
+#  @brief Type definition of the callback function required by the
+#  AdsSyncAddDeviceNotificationReqEx() function.
 #  @param[in] pAddr Structure with NetId and port number of the ADS server.
 #  @param[in] pNotification pointer to a AdsNotificationHeader structure
-#  @param[in] hUser custom handle pass to AdsSyncAddDeviceNotificationReqEx() during registration
+#  @param[in] hUser custom handle pass to AdsSyncAddDeviceNotificationReqEx()
+#  during registration
 # /
-# typedef void (* PAdsNotificationFuncEx)(const AmsAddr* pAddr, const AdsNotificationHeader* pNotification,
-#                                         uint32_t hUser);
+# typedef void (* PAdsNotificationFuncEx)(const AmsAddr* pAddr, const
+# AdsNotificationHeader* pNotification, ctypes.c_uint32 hUser);
 
 
 class AdsSymbolEntry(_AdsStructBase):
@@ -282,4 +284,108 @@ class AdsSymbolInfoByName(_AdsStructBase):
         ('index_offset', ctypes.c_uint32),
         # Length of the data
         ('length', ctypes.c_uint32),
+    ]
+
+
+class AmsTcpHeader(_AdsStructBase):
+    _fields_ = [
+        ('reserved', ctypes.c_uint16),
+        ('length', ctypes.c_uint32),
+    ]
+
+
+class AoERequestHeader(_AdsStructBase):
+    _fields_ = [
+        ('group', ctypes.c_uint32),
+        ('offset', ctypes.c_uint32),
+        ('length', ctypes.c_uint32),
+    ]
+
+    @classmethod
+    def from_sdo(cls,
+                 sdo_index: int,
+                 sdo_sub_index: int,
+                 data_length: int) -> 'AoERequestHeader':
+        """
+        Create an AoERequestHeader given SDO settings.
+
+        Parameters
+        ----------
+        sdo_index : int
+        sdo_sub_index : int
+        data_length : int
+
+        Returns
+        -------
+        AoERequestHeader
+        """
+        return cls(constants.SDO_UPLOAD, (sdo_index) << 16 | sdo_sub_index,
+                   data_length)
+
+
+class AoEWriteRequestHeader(AoERequestHeader):
+    _fields_ = [
+        # Inherits fields from AoERequestHeader.
+        ('write_length', ctypes.c_uint32),
+    ]
+
+
+class AdsWriteControlRequest(_AdsStructBase):
+    _fields_ = [
+        ('ads_state', ctypes.c_uint16),
+        ('dev_state', ctypes.c_uint16),
+        ('length', ctypes.c_uint32),
+    ]
+
+
+class AdsAddDeviceNotificationRequest(_AdsStructBase):
+    _fields_ = [
+        ('group', ctypes.c_uint32),
+        ('offset', ctypes.c_uint32),
+        ('length', ctypes.c_uint32),
+        ('mode', ctypes.c_uint32),
+        ('max_delay', ctypes.c_uint32),
+        ('cycle_time', ctypes.c_uint32),
+        ('reserved', ctypes.c_ubyte * 16),
+    ]
+
+
+class AoEHeader(_AdsStructBase):
+    _fields_ = [
+        ('target', AmsAddr),
+        ('source', AmsAddr),
+        ('command_id', ctypes.c_uint16),
+        ('state_flags', ctypes.c_uint16),
+        ('length', ctypes.c_uint32),
+        ('error_code', ctypes.c_uint32),
+        ('invoke_id', ctypes.c_uint32),
+    ]
+
+    _AMS_REQUEST = constants.AoEHeaderFlag.AMS_REQUEST
+
+    @classmethod
+    def create_request(cls,
+                       target: AmsAddr,
+                       source: AmsAddr,
+                       command_id: int,
+                       length: int,
+                       invoke_id: int,
+                       state_flags: constants.AoEHeaderFlag = _AMS_REQUEST,
+                       error_code: int = 0,
+                       ) -> 'AoEHeader':
+        """Create a request header."""
+        return cls(target, source, command_id, state_flags, length, error_code,
+                   invoke_id)
+
+
+class AoEResponseHeader(_AdsStructBase):
+    _fields_ = [
+        ('result', ctypes.c_uint32),
+    ]
+
+
+class AoEReadResponseHeader(AoEResponseHeader):
+    _fields_ = [
+        # Inherits 'result' from AoEResponseHeader.
+        ('read_length', ctypes.c_uint32),
     ]

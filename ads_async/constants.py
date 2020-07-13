@@ -26,16 +26,22 @@ class AmsPort(enum.IntEnum):
 
 
 class AdsCommandId(enum.IntEnum):
-    INVALID = 0x00
-    READDEVICEINFO = 0x01
-    READ = 0x02
-    WRITE = 0x03
-    READSTATE = 0x04
-    WRITECTRL = 0x05
-    ADDDEVICENOTE = 0x06
-    DELDEVICENOTE = 0x07
-    DEVICENOTE = 0x08
-    READWRITE = 0x09
+    INVALID = 0
+    READ_DEVICE_INFO = 1
+    READ = 2
+    WRITE = 3
+    READ_STATE = 4
+    WRITE_CONTROL = 5
+    ADD_DEVICE_NOTIFICATION = 6
+    DEL_DEVICE_NOTIFICATION = 7
+    DEVICE_NOTIFICATION = 8
+    READ_WRITE = 9
+
+
+class AoEHeaderFlag(enum.IntFlag):
+    AMS_REQUEST = 0x0004
+    AMS_RESPONSE = 0x0005
+    AMS_UDP = 0x0040
 
 
 class AdsIndexGroup(enum.IntEnum):
@@ -74,7 +80,8 @@ class AdsIndexGroup(enum.IntEnum):
     SUMUP_WRITE = 0xF081
 
     # AdsRW  IOffs list size
-    # @param W: {list of IGrp, IOffs, RLength, WLength} followed by {list of data}
+    # @param W: {list of IGrp, IOffs, RLength, WLength} followed by {list of
+    # data}
     # @param R: {list of results, RLength} followed by {list of data}
     SUMUP_READWRITE = 0xF082
 
@@ -84,7 +91,8 @@ class AdsIndexGroup(enum.IntEnum):
 
     # AdsRW  IOffs list size
     # @param W: {list of IGrp, IOffs, Length}
-    # @param R: {list of results, Length} followed by {list of data (returned lengths)}
+    # @param R: {list of results, Length} followed by {list of data (returned
+    # lengths)}
     SUMUP_READEX2 = 0xF084
 
     # AdsRW  IOffs list size
@@ -370,3 +378,6 @@ class AdsSymbolFlag(enum.IntFlag):
     TCCOMIFACEPTR = (1 << 4)
     READONLY = (1 << 5)
     CONTEXTMASK = (0xF00)
+
+
+SDO_UPLOAD = 0xF302
