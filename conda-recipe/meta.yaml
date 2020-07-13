@@ -3,7 +3,7 @@
 
 
 package:
-    name    : ads-server
+    name    : ads_async
 
     version : {{ data.get('version') }}
 
@@ -25,12 +25,12 @@ requirements:
 
 test:
     imports:
-      - ads-server
+      - ads_async
 
     requires:
       - pytest
 
 about:
-  home: https://github.com/pcdshub/ads-server
+  home: https://github.com/pcdshub/ads-async
   license: SLAC Open License
-  summary: Python TwinCAT ADS Server
+  summary: Python TwinCAT ADS async tools

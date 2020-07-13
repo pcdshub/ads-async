@@ -1,21 +1,21 @@
 ===============================
-ads-server
+ads-async
 ===============================
 
-.. image:: https://img.shields.io/travis/pcdshub/ads-server.svg
-        :target: https://travis-ci.org/pcdshub/ads-server
+.. image:: https://img.shields.io/travis/pcdshub/ads-async.svg
+        :target: https://travis-ci.org/pcdshub/ads-async
 
-.. image:: https://img.shields.io/pypi/v/ads-server.svg
-        :target: https://pypi.python.org/pypi/ads-server
+.. image:: https://img.shields.io/pypi/v/ads-async.svg
+        :target: https://pypi.python.org/pypi/ads-async
 
 
-Python TwinCAT ADS Server
+Python TwinCAT ADS async tools
 
 Documentation
 -------------
 
 Sphinx-generated documentation for this project can be found here:
-https://pcdshub.github.io/ads-server/
+https://pcdshub.github.io/ads-async/
 
 
 Requirements

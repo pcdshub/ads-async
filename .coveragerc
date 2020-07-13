@@ -1,6 +1,6 @@
 [run]
 source =
-    ads-server
+    ads_async
 [report]
 omit =
     #versioning
@@ -8,4 +8,4 @@ omit =
     *_version.py
     #tests
     *test*
-    ads-server/tests/*
+    ads_async/tests/*

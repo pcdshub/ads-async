@@ -13,7 +13,7 @@ Types of Contributions
 Report Bugs
 ~~~~~~~~~~~
 
-Report bugs at https://github.com/pcdshub/ads-server/issues.
+Report bugs at https://github.com/pcdshub/ads-async/issues.
 
 If you are reporting a bug, please include:
 
@@ -35,14 +35,14 @@ is open to whoever wants to implement it.
 Write Documentation
 ~~~~~~~~~~~~~~~~~~~
 
-ads-server could always use more documentation, whether
-as part of the official ads-server docs, in docstrings,
+ads-async could always use more documentation, whether
+as part of the official ads-async docs, in docstrings,
 or even on the web in blog posts, articles, and such.
 
 Submit Feedback
 ~~~~~~~~~~~~~~~
 
-The best way to send feedback is to file an issue at https://github.com/pcdshub/ads-server/issues.
+The best way to send feedback is to file an issue at https://github.com/pcdshub/ads-async/issues.
 
 If you are proposing a feature:
 
@@ -54,17 +54,17 @@ If you are proposing a feature:
 Get Started!
 ------------
 
-Ready to contribute? Here's how to set up `ads-server` for local development.
+Ready to contribute? Here's how to set up `ads-async` for local development.
 
-1. Fork the `ads-server` repo on GitHub.
+1. Fork the `ads-async` repo on GitHub.
 2. Clone your fork locally::
 
-    $ git clone git@github.com:your_name_here/ads-server.git
+    $ git clone git@github.com:your_name_here/ads-async.git
 
 3. Install your local copy into a new conda environment. Assuming you have conda installed, this is how you set up your fork for local development::
 
-    $ conda create -n ads-server python=3.7
-    $ cd ads-server/
+    $ conda create -n ads-async python=3.7
+    $ cd ads-async/
     $ pip install -e .
 
 4. Create a branch for local development::
@@ -75,7 +75,7 @@ Ready to contribute? Here's how to set up `ads-server` for local development.
 
 5. When you're done making changes, check that your changes pass flake8::
 
-    $ flake8 ads-server
+    $ flake8 ads_async
 
 6. Add new tests for any additional functionality or bugs you may have discovered.  And, of course, be sure that all previous tests still pass by running::
 
@@ -99,5 +99,5 @@ Before you submit a pull request, check that it meets these guidelines:
    new functionality into a function with a docstring, and add the feature to
    the list in README.rst.
 3. The pull request should work for Python 3.5 and up. Check
-   https://travis-ci.org/pcdshub/ads-server/pull_requests
+   https://travis-ci.org/pcdshub/ads-async/pull_requests
    and make sure that the tests pass for all supported Python versions.

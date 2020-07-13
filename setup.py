@@ -7,7 +7,7 @@ min_version = (3, 6)
 
 if sys.version_info < min_version:
     error = """
-ads-server does not support Python {0}.{1}.
+ads-async does not support Python {0}.{1}.
 Python {2}.{3} and above is required. Check your Python version like so:
 
 python3 --version
@@ -30,6 +30,7 @@ with open(path.join(here, 'requirements.txt')) as requirements_file:
     requirements = [line for line in requirements_file.read().splitlines()
                     if not line.startswith('#')]
 
+
 git_requirements = [r for r in requirements if r.startswith('git+')]
 if git_requirements:
     print('User must install the following packages manually:')
@@ -37,16 +38,17 @@ if git_requirements:
     print("\n".join(f'* {r}' for r in git_requirements))
     print()
 
+
 setup(
-    name='ads-server',
+    name='ads-async',
     version=versioneer.get_version(),
     cmdclass=versioneer.get_cmdclass(),
     license='BSD',
     author='SLAC National Accelerator Laboratory',
     packages=find_packages(exclude=['docs', 'tests']),
-    description='Python TwinCAT ADS Server',
+    description='Python TwinCAT ADS async tools',
     long_description=readme,
-    url='https://github.com/pcdshub/ads-server',
+    url='https://github.com/pcdshub/ads-async',
     entry_points={
         'console_scripts': [
             # 'some.module:some_function',
@@ -54,7 +56,7 @@ setup(
         },
     include_package_data=True,
     package_data={
-        'ads_server': [
+        'ads_async': [
             # When adding files here, remember to update MANIFEST.in as well,
             # or else they will not be included in the distribution on PyPI!
             # 'path/to/data_file',

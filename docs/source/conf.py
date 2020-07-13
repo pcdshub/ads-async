@@ -22,7 +22,7 @@ sys.path.insert(0, module_path)
 
 # -- Project information -----------------------------------------------------
 
-project = 'ads-server'
+project = 'ads-async'
 author = 'SLAC National Accelerator Laboratory'
 
 from datetime import datetime
@@ -144,7 +144,7 @@ latex_elements = {
 # (source start file, target name, title,
 #  author, documentclass [howto, manual, or own class]).
 latex_documents = [
-    (master_doc, 'ads-server.tex', 'ads-server Documentation',
+    (master_doc, 'ads-async.tex', 'ads-async Documentation',
      'SLAC National Accelerator Laboratory', 'manual'),
 ]
 
@@ -154,7 +154,7 @@ latex_documents = [
 # One entry per manual page. List of tuples
 # (source start file, name, description, authors, manual section).
 man_pages = [
-    (master_doc, 'ads-server', 'ads-server Documentation',
+    (master_doc, 'ads-async', 'ads-async Documentation',
      [author], 1)
 ]
 
@@ -165,8 +165,8 @@ man_pages = [
 # (source start file, target name, title, author,
 #  dir menu entry, description, category)
 texinfo_documents = [
-    (master_doc, 'ads-server', 'ads-server Documentation',
-     author, 'ads-server', 'One line description of project.',
+    (master_doc, 'ads-async', 'ads-async Documentation',
+     author, 'ads-async', 'One line description of project.',
      'Miscellaneous'),
 ]
 

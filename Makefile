@@ -5,7 +5,7 @@
 #################################################################################
 
 PROJECT_DIR := $(shell dirname $(realpath $(lastword $(MAKEFILE_LIST))))
-PROJECT_NAME = ads-server
+PROJECT_NAME = ads-async
 PYTHON_INTERPRETER = python3
 
 ifeq (,$(shell which conda))
