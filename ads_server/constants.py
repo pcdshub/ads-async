@@ -309,7 +309,7 @@ class AdsDataType(enum.IntEnum):
     MAXTYPES = 34
 
 
-data_type_to_ctypes = {
+AdsDataType.to_ctypes = {
     # AdsDataType.VOID: None,
     AdsDataType.INT8: ctypes.c_int8,
     AdsDataType.UINT8: ctypes.c_uint8,
@@ -329,7 +329,7 @@ data_type_to_ctypes = {
 }
 
 
-class AdsTransMode(enum.IntEnum):
+class AdsTransmissionMode(enum.IntEnum):
     NOTRANS = 0
     CLIENTCYCLE = 1
     CLIENTONCHA = 2
@@ -393,15 +393,38 @@ def _create_enum_property(field_name: str,
                           enum_cls: enum.Enum,
                           *,
                           doc: str = None,
-                          strict_set: bool = True):
+                          strict: bool = True):
     """
+    Create a property which makes a field value into an enum value.
+
+    Parameters
+    ----------
+    field_name : str
+        The field name (i.e., parameter 1 in the list of _fields_)
+
+    enum_cls : enum.Enum
+        The enum class.
+
+    doc : str, optional
+        Documentation for the property.
+
+    strict : bool, optional
+        Require values on get (and set) to be valid enum values.  If False, get
+        may return raw values, and set may accept raw values (unknown or
+        unacceptable enum values).
     """
 
     def fget(self):
-        return enum_cls(getattr(self, field_name))
+        value = getattr(self, field_name)
+        try:
+            return enum_cls(value)
+        except ValueError:
+            if not strict:
+                return value
+            raise
 
     def fset(self, value):
-        if strict_set:
+        if strict:
             # Raises ValueError if invalid
             value = enum_cls(value).value
 
@@ -420,6 +443,9 @@ class AmsNetId(_AdsStructBase):
     _fields_ = [
         ('octets', ctypes.c_uint8 * 6),
     ]
+
+    def __repr__(self):
+        return '.'.join(str(c) for c in self.octets)
 
     @classmethod
     def from_ipv4(cls, ip: typing.Union[str, ipaddress.IPv4Address],
@@ -478,8 +504,13 @@ class AmsAddr(_AdsStructBase):
         ('net_id', AmsNetId),
 
         # AMS Port number
-        ('port', ctypes.c_uint16),
+        ('_port', ctypes.c_uint16),
     ]
+
+    port = _create_enum_property('port', AmsPort, strict=False)
+
+    def __repr__(self):
+        return f'{self.net_id}:{self.port.value}({self.port.name})'
 
 
 class AdsVersion(_AdsStructBase):
@@ -526,10 +557,10 @@ class AdsNotificationAttrib(_AdsStructBase):
         # Length of the data that is to be passed to the callback function.
         ('callback_length', ctypes.c_uint32),
 
-        #  AdsTransMode.SERVERCYCLE: The notification's callback function is
-        #  invoked cyclically.
-        #  AdsTransMode.SERVERONCHA: The notification's callback function is
-        #  only invoked when the value changes.
+        #  AdsTransmissionMode.SERVERCYCLE: The notification's callback
+        #  function is invoked cyclically.
+        #  AdsTransmissionMode.SERVERONCHA: The notification's callback
+        #  function is only invoked when the value changes.
         ('_transmission_mode', ctypes.c_uint32),
 
         # The notification's callback function is invoked at the latest when
@@ -543,8 +574,8 @@ class AdsNotificationAttrib(_AdsStructBase):
     ]
 
     transmission_mode = _create_enum_property(
-        '_transmission_mode', AdsTransMode,
-        doc='Transmission mode settings (see AdsTransMode)',
+        '_transmission_mode', AdsTransmissionMode,
+        doc='Transmission mode settings (see AdsTransmissionMode)',
     )
 
 
@@ -595,9 +626,9 @@ class AdsSymbolEntry(_AdsStructBase):
         # size of symbol ( in bytes, 0 = bit )
         ('size', ctypes.c_uint32),
         # adsDataType of symbol
-        ('data_type', ctypes.c_uint32),
+        ('_data_type', ctypes.c_uint32),
         # see ADSSYMBOLFLAG_*
-        ('flags', ctypes.c_uint32),
+        ('_flags', ctypes.c_uint32),
         # length of symbol name (null terminating character not counted)
         ('name_length', ctypes.c_uint16),
         # length of type name (null terminating character not counted)
@@ -605,6 +636,9 @@ class AdsSymbolEntry(_AdsStructBase):
         # length of comment (null terminating character not counted)
         ('comment_length', ctypes.c_uint16),
     ]
+
+    flags = _create_enum_property('_flags', AdsSymbolFlag)
+    data_type = _create_enum_property('_data_type', AdsDataType)
 
 
 class AdsSymbolInfoByName(_AdsStructBase):
