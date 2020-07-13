@@ -1,0 +1,11 @@
+[run]
+source =
+    ads-server
+[report]
+omit =
+    #versioning
+    .*version.*
+    *_version.py
+    #tests
+    *test*
+    ads-server/tests/*

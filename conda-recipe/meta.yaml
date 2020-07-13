@@ -1,0 +1,36 @@
+
+{% set data = load_setup_py_data() %}
+
+
+package:
+    name    : ads-server
+
+    version : {{ data.get('version') }}
+
+
+source:
+    path: ..
+
+build:
+    number: 1
+    noarch: python
+
+requirements:
+    build:
+      - python >=3.6
+      - setuptools
+
+    run:
+      - python >=3.6
+
+test:
+    imports:
+      - ads-server
+
+    requires:
+      - pytest
+
+about:
+  home: https://github.com/pcdshub/ads-server
+  license: SLAC Open License
+  summary: Python TwinCAT ADS Server
