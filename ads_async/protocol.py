@@ -20,7 +20,7 @@ def from_wire(buf, *, logger=module_logger
         if header.length < _AOE_HEADER_LENGTH:
             # Not sure?
             logger.warning(
-                'Throwing away packet (header.length=%d < %d',
+                'Throwing away packet as header.length=%d < %d',
                 header.length, _AOE_HEADER_LENGTH
             )
             buf = buf[header.length + _AMS_HEADER_LENGTH:]
@@ -33,18 +33,24 @@ def from_wire(buf, *, logger=module_logger
         view = view[_AMS_HEADER_LENGTH:]
         aoe_header = structs.AoEHeader.from_buffer(view)
 
-        required_bytes += aoe_header.length
-
-        if len(buf) < required_bytes:
-            break
-
         view = view[_AOE_HEADER_LENGTH:]
-        payload = view[:aoe_header.length]
 
-        yield aoe_header, payload
+        expected_size = (
+            _AMS_HEADER_LENGTH + _AOE_HEADER_LENGTH + aoe_header.length
+        )
+
         buf = buf[required_bytes:]
 
-    return buf
+        if expected_size == required_bytes:
+            payload = view[:aoe_header.length]
+            yield buf, (aoe_header, payload)
+        else:
+            logger.warning(
+                'Throwing away packet as lengths do not add up: '
+                'AMS=%d AOE=%d payload=%d -> %d != AMS-header specified %d',
+                _AMS_HEADER_LENGTH, _AOE_HEADER_LENGTH, aoe_header.length,
+                expected_size, required_bytes
+            )
 
 
 class AcceptedClient:
@@ -80,8 +86,10 @@ class AcceptedClient:
 
     def received_data(self, data):
         self.recv_buffer += data
-        for item in from_wire(self.recv_buffer, logger=self.log):
-            self.log.debug('Received %s', item, extra={'direction': '<<<---'})
+        for buf, item in from_wire(self.recv_buffer, logger=self.log):
+            self.log.debug('Received %s', item,
+                           extra={'direction': '<<<---'})
+            self.recv_buffer = buf
             yield item
 
     def response_to_wire(
