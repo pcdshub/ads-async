@@ -16,7 +16,8 @@ _AOE_HEADER_LENGTH = ctypes.sizeof(structs.AoEHeader)
 def deserialize_buffer(buf):
     while len(buf) >= _AMS_HEADER_LENGTH:
         # TCP header / AoE header / frame
-        header = structs.AmsTcpHeader.from_buffer(buf)
+        view = memoryview(buf)
+        header = structs.AmsTcpHeader.from_buffer(view)
         if header.length < _AOE_HEADER_LENGTH:
             # Not sure?
             logger.warning(
@@ -27,17 +28,21 @@ def deserialize_buffer(buf):
             continue
 
         required_bytes = _AMS_HEADER_LENGTH + header.length
-        print(_AMS_HEADER_LENGTH, _AOE_HEADER_LENGTH, header.length, 'of',
-              len(buf))
         if len(buf) < required_bytes:
             break
 
-        aoe_header = structs.AoEHeader.from_buffer(
-            buf[_AMS_HEADER_LENGTH:_AMS_HEADER_LENGTH + _AOE_HEADER_LENGTH + 1]
-        )
+        view = view[_AMS_HEADER_LENGTH:]
+        aoe_header = structs.AoEHeader.from_buffer(view)
 
-        # payload = buf[_AMS_HEADER_LENGTH + _AOE_HEADER_LENGTH + 1]
-        yield aoe_header
+        required_bytes += aoe_header.length
+
+        if len(buf) < required_bytes:
+            break
+
+        view = view[_AOE_HEADER_LENGTH:]
+        payload = view[:aoe_header.length]
+
+        yield aoe_header, payload
         buf = buf[required_bytes:]
 
     return buf
