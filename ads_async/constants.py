@@ -20,10 +20,6 @@ class AmsPort(enum.IntEnum):
     R0_PLC_RTS4 = 831
     R0_PLC_TC3 = 851
 
-    @property
-    def tcp_port(self):
-        return ADS_TCP_SERVER_PORT + self.value
-
 
 class AdsCommandId(enum.IntEnum):
     INVALID = 0

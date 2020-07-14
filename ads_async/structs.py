@@ -14,6 +14,10 @@ class _AdsStructBase(ctypes.LittleEndianStructure):
         return {attr: getattr(self, attr)
                 for attr, *info in self._fields_}
 
+    @property
+    def serialized_length(self):
+        return ctypes.sizeof(self)
+
     def __repr__(self):
         formatted_args = ", ".join(f"{k!s}={v!r}"
                                    for k, v in self.to_dict().items())
@@ -138,10 +142,13 @@ class AmsAddr(_AdsStructBase):
         ('_port', ctypes.c_uint16),
     ]
 
-    port = _create_enum_property('port', constants.AmsPort, strict=False)
+    port = _create_enum_property('_port', constants.AmsPort, strict=False)
 
     def __repr__(self):
-        return f'{self.net_id}:{self.port.value}({self.port.name})'
+        port = self.port
+        if hasattr(port, 'value'):
+            return f'{self.net_id}:{self.port.value}({self.port.name})'
+        return f'{self.net_id}:{self.port}'
 
 
 class AdsVersion(_AdsStructBase):
