@@ -10,10 +10,9 @@ _AMS_HEADER_LENGTH = ctypes.sizeof(structs.AmsTcpHeader)
 _AOE_HEADER_LENGTH = ctypes.sizeof(structs.AoEHeader)
 
 
-def deserialize_buffer(
-        buf, *, logger=module_logger
-        ) -> typing.Generator[typing.Tuple[structs.AoEHeader, typing.Any], None,
-                              None]:
+def from_wire(buf, *, logger=module_logger
+              ) -> typing.Generator[
+                      typing.Tuple[structs.AoEHeader, typing.Any], None, None]:
     while len(buf) >= _AMS_HEADER_LENGTH:
         # TCP header / AoE header / frame
         view = memoryview(buf)
@@ -74,20 +73,49 @@ class AcceptedClient:
 
     def handle_command(self, header: structs.AoEHeader, data):
         command = header.command_id
-        self.log.debug('Handling %s', command)
+        self.log.debug('Handling %s', command,
+                       extra={'sequence': header.invoke_id})
         if command == constants.AdsCommandId.READ_DEVICE_INFO:
             yield self.server.device_info
 
     def received_data(self, data):
         self.recv_buffer += data
-        for item in deserialize_buffer(self.recv_buffer, logger=self.log):
+        for item in from_wire(self.recv_buffer, logger=self.log):
             self.log.debug('Received %s', item, extra={'direction': '<<<---'})
             yield item
 
-    def send(self, *items):
+    def response_to_wire(
+            self, item: structs._AdsStructBase,
+            request_header: structs.AoEHeader,
+            ads_error: constants.AdsError = constants.AdsError.NOERR
+            ) -> bytearray:
+        request_id = request_header.invoke_id
+
+        extra = {
+            'direction': '--->>>',
+            'sequence': request_id,
+        }
+
         bytes_to_send = bytearray()
-        for item in items:
-            self.log.debug('Sending %s', item, extra={'direction': '--->>>'})
+        self.log.debug('Response %s', item, extra=extra)
+
+        item_length = ctypes.sizeof(item)
+        aoe_header = structs.AoEHeader.create_response(
+            target=request_header.source,
+            source=request_header.target,
+            command_id=item._command_id,
+            invoke_id=request_id,
+            length=item_length,
+        )
+
+        ams_tcp_header = structs.AmsTcpHeader(_AOE_HEADER_LENGTH + item_length)
+
+        # TODO can multiple AoEHeaders be in a single AMS/TCP packet?
+        bytes_to_send = bytearray(ams_tcp_header)
+        bytes_to_send.extend(aoe_header)
+        bytes_to_send.extend(structs.AoEResponseHeader(ads_error))
+        bytes_to_send.extend(item)
+        return bytes_to_send
 
 
 class Server:

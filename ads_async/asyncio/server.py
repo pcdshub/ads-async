@@ -15,16 +15,18 @@ class AsyncioAcceptedClient:
     reader: asyncio.StreamReader
     writer: asyncio.StreamWriter
 
-    def __init__(self, server: 'AsyncioServer', client: protocol.AcceptedClient,
-                 reader: asyncio.StreamReader, writer: asyncio.StreamWriter):
+    def __init__(
+            self, server: 'AsyncioServer', client: protocol.AcceptedClient,
+            reader: asyncio.StreamReader, writer: asyncio.StreamWriter):
         self.server = server
         self.client = client
         self.reader = reader
         self.writer = writer
         self.log = client.log
 
-    async def send(self, *items):
-        bytes_to_send = self.client.send(*items)
+    async def send_response(self, request_header, item):
+        bytes_to_send = self.client.response_to_wire(
+            item, request_header=request_header)
         self.writer.write(bytes_to_send)
         await self.writer.drain()
 
@@ -40,7 +42,7 @@ class AsyncioAcceptedClient:
 
     async def _handle_command(self, header: structs.AoEHeader, item):
         for response in self.client.handle_command(header, item):
-            await self.send(response)
+            await self.send_response(header, response)
 
 
 class AsyncioServer:

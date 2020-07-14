@@ -4,21 +4,30 @@ import ipaddress
 import typing
 
 from . import constants
+from .constants import AoEHeaderFlag
 
 
 class _AdsStructBase(ctypes.LittleEndianStructure):
+    # To be overridden by subclasses:
+    _command_id: constants.AdsCommandId = constants.AdsCommandId.INVALID
+
     _pack_ = 1
     _dict_mapping = {}
 
-    def to_dict(self):
+    @property
+    def _dict_attrs(self):
+        for attr, *info in self._fields_:
+            yield self._dict_mapping.get(attr, attr)
+
+    def to_dict(self) -> dict:
         """Return the structure as a dictionary."""
         # Raw values can be retargeted to properties by way of _dict_mapping:
         #  {'raw_attr': 'property_attr'}
-        return {attr: getattr(self, self._dict_mapping.get(attr, attr))
-                for attr, *info in self._fields_}
+        return {attr: getattr(self, attr)
+                for attr in self._dict_attrs}
 
     @property
-    def serialized_length(self):
+    def serialized_length(self) -> int:
         return ctypes.sizeof(self)
 
     def __repr__(self):
@@ -89,15 +98,14 @@ def _create_byte_string_property(field_name: str, *, doc: str = None,
         writing).
     """
 
-    def fget(self):
+    def fget(self) -> str:
         value = getattr(self, field_name)
-
         try:
             return value.decode(encoding)
         except ValueError:
             return value
 
-    def fset(self, value):
+    def fset(self, value: str):
         if isinstance(value, str):
             value = value.encode(encoding)
         setattr(self, field_name, value)
@@ -112,6 +120,8 @@ class AmsNetId(_AdsStructBase):
     Net IDs are do not necessarily have to have a relation to an IP address,
     though by convention it may be wise to configure them similarly.
     """
+    octets: ctypes.c_uint8 * 6
+
     _fields_ = [
         ('octets', ctypes.c_uint8 * 6),
     ]
@@ -122,7 +132,7 @@ class AmsNetId(_AdsStructBase):
     @classmethod
     def from_ipv4(cls, ip: typing.Union[str, ipaddress.IPv4Address],
                   octet5: int = 1,
-                  octet6: int = 1):
+                  octet6: int = 1) -> 'AmsNetId':
         """
         Create an AMS Net ID based on an IPv4 address.
 
@@ -147,7 +157,7 @@ class AmsNetId(_AdsStructBase):
         return cls(tuple(ip.packed) + (octet5, octet6))
 
     @classmethod
-    def from_string(cls, addr: str):
+    def from_string(cls, addr: str) -> 'AmsNetId':
         """
         Create an AMS Net ID based on an AMS ID string.
 
@@ -172,6 +182,9 @@ class AmsNetId(_AdsStructBase):
 
 class AmsAddr(_AdsStructBase):
     """The full address of an ADS device can be stored in this structure."""
+    net_id: AmsNetId
+    _port: int
+
     _fields_ = [
         ('net_id', AmsNetId),
 
@@ -192,6 +205,10 @@ class AmsAddr(_AdsStructBase):
 class AdsVersion(_AdsStructBase):
     """Contains the version number, revision number and build number."""
 
+    version: int
+    revision: int
+    build: int
+
     _fields_ = [
         ('version', ctypes.c_uint8),
         ('revision', ctypes.c_uint8),
@@ -201,6 +218,8 @@ class AdsVersion(_AdsStructBase):
 
 class AdsDeviceInfo(AdsVersion):
     """Contains the version number, revision number and build number."""
+    _name: ctypes.c_char * 16
+    _command_id = constants.AdsCommandId.READ_DEVICE_INFO
 
     _fields_ = [
         # Inherits version information from AdsVersion
@@ -248,6 +267,11 @@ class AdsNotificationAttrib(_AdsStructBase):
     close connections when they are no longer required.
     """
 
+    callback_length: int
+    _transmission_mode: int
+    max_delay: int
+    cycle_time: int
+
     _fields_ = [
         # Length of the data that is to be passed to the callback function.
         ('callback_length', ctypes.c_uint32),
@@ -278,6 +302,10 @@ class AdsNotificationAttrib(_AdsStructBase):
 
 class AdsNotificationHeader(_AdsStructBase):
     """This structure is also passed to the callback function."""
+
+    notification_handle: int
+    timestamp: int
+    sample_size: int
 
     _fields_ = [
         # Handle for the notification. Is specified when the notification is
@@ -314,6 +342,15 @@ class AdsSymbolEntry(_AdsStructBase):
     be followed by zero terminated strings for "symbol name", "type name"
     and a "comment"
     """
+    entry_length: int
+    index_group: int
+    index_offset: int
+    size: int
+    _data_type: int
+    _flags: int
+    name_length: int
+    type_length: int
+    comment_length: int
 
     _fields_ = [
         # length of complete symbol entry
@@ -343,6 +380,9 @@ class AdsSymbolEntry(_AdsStructBase):
 
 class AdsSymbolInfoByName(_AdsStructBase):
     """Used to provide ADS symbol information for ADS SUM commands."""
+    index_group: int
+    index_offset: int
+    length: int
 
     _fields_ = [
         # indexGroup of symbol: input, output etc.
@@ -355,13 +395,23 @@ class AdsSymbolInfoByName(_AdsStructBase):
 
 
 class AmsTcpHeader(_AdsStructBase):
+    reserved: int
+    length: int
+
     _fields_ = [
         ('reserved', ctypes.c_uint16),
         ('length', ctypes.c_uint32),
     ]
 
+    def __init__(self, length: int = 0):
+        super().__init__(0, length)
+
 
 class AoERequestHeader(_AdsStructBase):
+    group: int
+    offset: int
+    length: int
+
     _fields_ = [
         ('group', ctypes.c_uint32),
         ('offset', ctypes.c_uint32),
@@ -391,6 +441,8 @@ class AoERequestHeader(_AdsStructBase):
 
 
 class AoEWriteRequestHeader(AoERequestHeader):
+    write_length: int
+
     _fields_ = [
         # Inherits fields from AoERequestHeader.
         ('write_length', ctypes.c_uint32),
@@ -398,6 +450,10 @@ class AoEWriteRequestHeader(AoERequestHeader):
 
 
 class AdsWriteControlRequest(_AdsStructBase):
+    ads_state: int
+    dev_state: int
+    length: int
+
     _fields_ = [
         ('ads_state', ctypes.c_uint16),
         ('dev_state', ctypes.c_uint16),
@@ -406,6 +462,13 @@ class AdsWriteControlRequest(_AdsStructBase):
 
 
 class AdsAddDeviceNotificationRequest(_AdsStructBase):
+    group: int
+    offset: int
+    length: int
+    mode: int
+    max_delay: int
+    cycle_time: (ctypes.c_ubyte * 16)
+
     _fields_ = [
         ('group', ctypes.c_uint32),
         ('offset', ctypes.c_uint32),
@@ -418,6 +481,14 @@ class AdsAddDeviceNotificationRequest(_AdsStructBase):
 
 
 class AoEHeader(_AdsStructBase):
+    target: AmsAddr
+    source: AmsAddr
+    command_id: constants.AdsCommandId
+    state_flags: constants.AoEHeaderFlag
+    length: int
+    error_code: int
+    invoke_id: int
+
     _fields_ = [
         ('target', AmsAddr),
         ('source', AmsAddr),
@@ -428,19 +499,34 @@ class AoEHeader(_AdsStructBase):
         ('invoke_id', ctypes.c_uint32),
     ]
 
-    _AMS_REQUEST = constants.AoEHeaderFlag.AMS_REQUEST
+    @classmethod
+    def create_request(
+            cls,
+            target: AmsAddr,
+            source: AmsAddr,
+            command_id: constants.AdsCommandId,
+            length: int,
+            invoke_id: int, *,
+            state_flags: constants.AoEHeaderFlag = AoEHeaderFlag.ADS_COMMAND,
+            error_code: int = 0,
+            ) -> 'AoEHeader':
+        """Create a request header."""
+        return cls(target, source, command_id, state_flags, length, error_code,
+                   invoke_id)
 
     @classmethod
-    def create_request(cls,
-                       target: AmsAddr,
-                       source: AmsAddr,
-                       command_id: int,
-                       length: int,
-                       invoke_id: int,
-                       state_flags: constants.AoEHeaderFlag = _AMS_REQUEST,
-                       error_code: int = 0,
-                       ) -> 'AoEHeader':
-        """Create a request header."""
+    def create_response(
+            cls,
+            target: AmsAddr,
+            source: AmsAddr,
+            command_id: constants.AdsCommandId,
+            length: int,
+            invoke_id: int, *,
+            state_flags: AoEHeaderFlag = (AoEHeaderFlag.ADS_COMMAND |
+                                          AoEHeaderFlag.RESPONSE),
+            error_code: int = 0,
+            ) -> 'AoEHeader':
+        """Create a response header."""
         return cls(target, source, command_id, state_flags, length, error_code,
                    invoke_id)
 

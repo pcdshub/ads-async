@@ -35,9 +35,35 @@ class AdsCommandId(enum.IntEnum):
 
 
 class AoEHeaderFlag(enum.IntFlag):
-    AMS_REQUEST = 0x0004
-    AMS_RESPONSE = 0x0005
-    AMS_UDP = 0x0040
+    """
+    Header flag information, used in :class:`AoEHeader`.
+
+    Notes
+    -----
+
+    Wireshark bit reference::
+
+         .... .... .... ...0 = RESPONSE
+         .... .... .... ..0. = NO RETURN
+         .... .... .... .0.. = ADS COMMAND
+         .... .... .... 0... = SYSTEM COMMAND
+         .... .... ...0 .... = HIGH PRIORITY COMMAND
+         .... .... ..0. .... = TIMESTAMP ADDED
+         .... .... .0.. .... = UDP COMMAND
+         .... .... 0... .... = INIT COMMAND
+         0... .... .... .... = BROADCAST
+
+    """
+
+    RESPONSE = 0b0000_0001
+    NO_RETURN = 0b0000_0010
+    ADS_COMMAND = 0b0000_0100
+    SYSTEM_COMMAND = 0b0000_1000
+    HIGH_PRIORITY_COMMAND = 0b0001_0000
+    TIMESTAMP_ADDED = 0b0010_0000
+    UDP_COMMAND = 0b0100_0000
+    INIT_COMMAND = 0b1000_0000
+    BROADCAST = 0b1000_0000_0000_0000
 
 
 class AdsIndexGroup(enum.IntEnum):

@@ -70,6 +70,8 @@ class LogFormatter(logging.Formatter):
             message.append('%dB' % record.bytesize)
         if hasattr(record, 'counter'):
             message.append('(%d of %d)' % record.counter)
+        if hasattr(record, 'sequence'):
+            message.append('{%d}' % record.sequence)
         if hasattr(record, 'symbol'):
             message.append(record.symbol)
         message.append(record.getMessage())
