@@ -13,6 +13,10 @@ _AOE_HEADER_LENGTH = ctypes.sizeof(structs.AoEHeader)
 def from_wire(buf, *, logger=module_logger
               ) -> typing.Generator[
                       typing.Tuple[structs.AoEHeader, typing.Any], None, None]:
+
+    header: structs.AmsTcpHeader
+    aoe_header: structs.AoEHeader
+
     while len(buf) >= _AMS_HEADER_LENGTH:
         # TCP header / AoE header / frame
         view = memoryview(buf)
@@ -34,7 +38,6 @@ def from_wire(buf, *, logger=module_logger
         aoe_header = structs.AoEHeader.from_buffer(view)
 
         view = view[_AOE_HEADER_LENGTH:]
-
         expected_size = (
             _AMS_HEADER_LENGTH + _AOE_HEADER_LENGTH + aoe_header.length
         )
@@ -42,7 +45,19 @@ def from_wire(buf, *, logger=module_logger
         buf = buf[required_bytes:]
 
         if expected_size == required_bytes:
-            payload = view[:aoe_header.length]
+            try:
+                cmd_cls = structs.get_struct_by_command(
+                    aoe_header.command_id, request=aoe_header.is_request)
+            except KeyError:
+                payload = view[:aoe_header.length]
+            else:
+                if hasattr(cmd_cls, 'from_buffer_extended'):
+                    # TODO: can't call super().from_buffer in a subclass
+                    # classmethod?
+                    payload = cmd_cls.from_buffer_extended(view)
+                else:
+                    payload = cmd_cls.from_buffer(view)
+
             yield buf, (aoe_header, payload)
         else:
             logger.warning(
@@ -83,6 +98,22 @@ class AcceptedClient:
                        extra={'sequence': header.invoke_id})
         if command == constants.AdsCommandId.READ_DEVICE_INFO:
             yield self.server.device_info
+        elif command == constants.AdsCommandId.READ_WRITE:
+            ...
+        elif command == constants.AdsCommandId.READ:
+            ...
+        elif command == constants.AdsCommandId.WRITE:
+            ...
+        elif command == constants.AdsCommandId.READ_STATE:
+            ...
+        elif command == constants.AdsCommandId.WRITE_CONTROL:
+            ...
+        elif command == constants.AdsCommandId.ADD_DEVICE_NOTIFICATION:
+            ...
+        elif command == constants.AdsCommandId.DEL_DEVICE_NOTIFICATION:
+            ...
+        elif command == constants.AdsCommandId.DEVICE_NOTIFICATION:
+            ...
 
     def received_data(self, data):
         self.recv_buffer += data

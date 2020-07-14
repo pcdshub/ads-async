@@ -1,10 +1,41 @@
 import ctypes
 import enum
+import functools
 import ipaddress
 import typing
 
 from . import constants
 from .constants import AoEHeaderFlag
+
+_commands = {}
+
+
+def _use_for(key: str, command_id: constants.AdsCommandId, cls: type) -> type:
+    if command_id not in _commands:
+        _commands[command_id] = {}
+
+    _commands[command_id][key] = cls
+    cls._command_id = command_id
+    return cls
+
+
+def use_for_response(command_id: constants.AdsCommandId):
+    """
+    Decorator marking a class to be used for a specific AdsCommand response.
+    """
+    return functools.partial(_use_for, 'response', command_id)
+
+
+def use_for_request(command_id: constants.AdsCommandId):
+    """
+    Decorator marking a class to be used for a specific AdsCommand request.
+    """
+    return functools.partial(_use_for, 'request', command_id)
+
+
+def get_struct_by_command(command_id: constants.AdsCommandId, request: bool):
+    key = 'request' if request else 'response'
+    return _commands[command_id][key]
 
 
 class _AdsStructBase(ctypes.LittleEndianStructure):
@@ -216,10 +247,10 @@ class AdsVersion(_AdsStructBase):
     ]
 
 
+@use_for_response(constants.AdsCommandId.READ_DEVICE_INFO)
 class AdsDeviceInfo(AdsVersion):
     """Contains the version number, revision number and build number."""
     _name: ctypes.c_char * 16
-    _command_id = constants.AdsCommandId.READ_DEVICE_INFO
 
     _fields_ = [
         # Inherits version information from AdsVersion
@@ -378,14 +409,43 @@ class AdsSymbolEntry(_AdsStructBase):
     _dict_mapping = {'_flags': 'flags', '_data_type': 'data_type'}
 
 
+@use_for_request(constants.AdsCommandId.READ_WRITE)
+class AdsReadWriteRequest(_AdsStructBase):
+    """Used to read/write a symbol."""
+    index_group: int
+    index_offset: int
+    read_length: int
+    write_length: int
+    _data_start: ctypes.c_ubyte * 0
+    data: typing.Any = None
+
+    _fields_ = [
+        ('index_group', ctypes.c_uint32),
+        ('index_offset', ctypes.c_uint32),
+        ('read_length', ctypes.c_uint32),
+        ('write_length', ctypes.c_uint32),
+        ('_data_start', ctypes.c_ubyte * 0),
+    ]
+
+    @classmethod
+    def from_buffer_extended(cls, buf):
+        struct = cls.from_buffer(buf)
+        data_start = AdsReadWriteRequest._data_start.offset
+        struct.data = bytearray(
+            buf[data_start:data_start + struct.write_length])
+        return struct
+
+    _dict_mapping = {'_data_start': 'data'}
+
+
 class AdsSymbolInfoByName(_AdsStructBase):
     """Used to provide ADS symbol information for ADS SUM commands."""
+    # indexGroup of symbol: input, output etc.
     index_group: int
     index_offset: int
     length: int
 
     _fields_ = [
-        # indexGroup of symbol: input, output etc.
         ('index_group', ctypes.c_uint32),
         # indexOffset of symbol
         ('index_offset', ctypes.c_uint32),
@@ -498,6 +558,14 @@ class AoEHeader(_AdsStructBase):
         ('error_code', ctypes.c_uint32),
         ('invoke_id', ctypes.c_uint32),
     ]
+
+    @property
+    def is_response(self) -> bool:
+        return (AoEHeaderFlag.RESPONSE in self.state_flags)
+
+    @property
+    def is_request(self) -> bool:
+        return not self.is_response
 
     @classmethod
     def create_request(
