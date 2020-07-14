@@ -71,7 +71,8 @@ class Client:
     def received_data(self, data):
         self.recv_buffer += data
         for item in deserialize_buffer(self.recv_buffer, logger=self.log):
-            self.log.debug('Received %s', item)
+            self.log.debug('Received %s', item, extra={'direction': '<<<---'})
+            yield item
 
 
 class Server:

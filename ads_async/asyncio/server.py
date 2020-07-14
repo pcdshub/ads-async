@@ -8,7 +8,40 @@ from . import utils
 logger = logging.getLogger(__name__)
 
 
+class AsyncioClient:
+    server: 'AsyncioServer'
+    client: protocol.Client
+    log: logging.Logger
+    reader: asyncio.StreamReader
+    writer: asyncio.StreamWriter
+
+    def __init__(self, server: 'AsyncioServer', client: protocol.Client,
+                 reader: asyncio.StreamReader, writer: asyncio.StreamWriter):
+        self.server = server
+        self.client = client
+        self.reader = reader
+        self.writer = writer
+        self.log = client.log
+
+    async def _handle_loop(self):
+        while True:
+            data = await self.reader.read(1024)
+            if not len(data):
+                self.client.disconnected()
+                break
+
+            for item in self.client.received_data(data):
+                print('handle item')
+
+
 class AsyncioServer:
+    _port: int
+    _hosts: list
+    _tasks: utils._TaskHandler
+    _running: bool
+    _shutdown_event: asyncio.Event
+    server: protocol.Server
+
     def __init__(self,
                  port: int = constants.ADS_TCP_SERVER_PORT,
                  hosts: list = None):
@@ -27,7 +60,8 @@ class AsyncioServer:
         self._shutdown_event.clear()
         for host in self._hosts:
             await asyncio.start_server(
-                functools.partial(self.new_client, (host, self._port)),
+                functools.partial(self._handle_new_client,
+                                  (host or '0.0.0.0', self._port)),
                 host=host,
                 port=self._port,
             )
@@ -41,18 +75,14 @@ class AsyncioServer:
     async def serve_forever(self):
         await self._shutdown_event.wait()
 
-    async def new_client(self, server_host, reader, writer):
+    async def _handle_new_client(self, server_host, reader, writer):
         client_addr = writer.transport.get_extra_info('peername')
-        client = self.server.add_client(server_host, client_addr)
-        while True:
-            data = await reader.read(1024)
-            if not len(data):
-                client.disconnected()
-                break
-            else:
-                client.received_data(data)
-
-        self.server.remove_client(client_addr)
+        protocol_client = self.server.add_client(server_host, client_addr)
+        client = AsyncioClient(self, protocol_client, reader, writer)
+        try:
+            await client._handle_loop()
+        finally:
+            self.server.remove_client(client_addr)
 
 
 if __name__ == '__main__':
@@ -65,6 +95,6 @@ if __name__ == '__main__':
         await server.serve_forever()
 
     from .. import log
-    log.configure(level='INFO')
+    log.configure(level='DEBUG')
 
     asyncio.run(test())
