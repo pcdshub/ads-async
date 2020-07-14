@@ -1,4 +1,5 @@
 import asyncio
+import functools
 import logging
 
 from .. import constants, protocol
@@ -24,10 +25,10 @@ class AsyncioServer:
 
         self._running = True
         self._shutdown_event.clear()
-        for interface in self._hosts:
+        for host in self._hosts:
             await asyncio.start_server(
-                self.new_client,
-                host=interface,
+                functools.partial(self.new_client, (host, self._port)),
+                host=host,
                 port=self._port,
             )
 
@@ -40,10 +41,9 @@ class AsyncioServer:
     async def serve_forever(self):
         await self._shutdown_event.wait()
 
-    async def new_client(self, reader, writer):
-        print('new client', reader, writer)
-        client_key = (reader, writer)
-        client = self.server.add_client(client_key)
+    async def new_client(self, server_host, reader, writer):
+        client_addr = writer.transport.get_extra_info('peername')
+        client = self.server.add_client(server_host, client_addr)
         while True:
             data = await reader.read(1024)
             if not len(data):
@@ -52,13 +52,19 @@ class AsyncioServer:
             else:
                 client.received_data(data)
 
-        self.server.remove_client(client_key)
+        self.server.remove_client(client_addr)
 
 
 if __name__ == '__main__':
+    server = None
+
     async def test():
+        global server
         server = AsyncioServer()
         await server.start()
         await server.serve_forever()
+
+    from .. import log
+    log.configure(level='INFO')
 
     asyncio.run(test())

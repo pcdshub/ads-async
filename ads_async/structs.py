@@ -8,10 +8,13 @@ from . import constants
 
 class _AdsStructBase(ctypes.LittleEndianStructure):
     _pack_ = 1
+    _dict_mapping = {}
 
     def to_dict(self):
         """Return the structure as a dictionary."""
-        return {attr: getattr(self, attr)
+        # Raw values can be retargeted to properties by way of _dict_mapping:
+        #  {'raw_attr': 'property_attr'}
+        return {attr: getattr(self, self._dict_mapping.get(attr, attr))
                 for attr, *info in self._fields_}
 
     @property
@@ -143,6 +146,7 @@ class AmsAddr(_AdsStructBase):
     ]
 
     port = _create_enum_property('_port', constants.AmsPort, strict=False)
+    _dict_mapping = {'_port': 'port'}
 
     def __repr__(self):
         port = self.port
@@ -216,6 +220,8 @@ class AdsNotificationAttrib(_AdsStructBase):
         doc='Transmission mode settings (see AdsTransmissionMode)',
     )
 
+    _dict_mapping = {'_transmission_mode': 'transmission_mode'}
+
 
 class AdsNotificationHeader(_AdsStructBase):
     """This structure is also passed to the callback function."""
@@ -279,6 +285,7 @@ class AdsSymbolEntry(_AdsStructBase):
 
     flags = _create_enum_property('_flags', constants.AdsSymbolFlag)
     data_type = _create_enum_property('_data_type', constants.AdsDataType)
+    _dict_mapping = {'_flags': 'flags', '_data_type': 'data_type'}
 
 
 class AdsSymbolInfoByName(_AdsStructBase):
@@ -361,8 +368,8 @@ class AoEHeader(_AdsStructBase):
     _fields_ = [
         ('target', AmsAddr),
         ('source', AmsAddr),
-        ('command_id', ctypes.c_uint16),
-        ('state_flags', ctypes.c_uint16),
+        ('_command_id', ctypes.c_uint16),
+        ('_state_flags', ctypes.c_uint16),
         ('length', ctypes.c_uint32),
         ('error_code', ctypes.c_uint32),
         ('invoke_id', ctypes.c_uint32),
@@ -383,6 +390,12 @@ class AoEHeader(_AdsStructBase):
         """Create a request header."""
         return cls(target, source, command_id, state_flags, length, error_code,
                    invoke_id)
+
+    command_id = _create_enum_property('_command_id', constants.AdsCommandId)
+    state_flags = _create_enum_property(
+        '_state_flags', constants.AoEHeaderFlag)
+    _dict_mapping = {'_command_id': 'command_id',
+                     '_state_flags': 'state_flags'}
 
 
 class AoEResponseHeader(_AdsStructBase):
