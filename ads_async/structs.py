@@ -243,7 +243,7 @@ class AdsVersion(_AdsStructBase):
     _fields_ = [
         ('version', ctypes.c_uint8),
         ('revision', ctypes.c_uint8),
-        ('build', ctypes.c_uint8),
+        ('build', ctypes.c_uint16),
     ]
 
 
@@ -251,6 +251,7 @@ class AdsVersion(_AdsStructBase):
 class AdsDeviceInfo(AdsVersion):
     """Contains the version number, revision number and build number."""
     _name: ctypes.c_char * 16
+    name: str
 
     _fields_ = [
         # Inherits version information from AdsVersion
@@ -278,14 +279,14 @@ class AdsNotificationAttrib(_AdsStructBase):
     the nMaxDelay time has elapsed, then the callback function is invoked
     for each entry. The nTransMode parameter affects this process as follows:
 
-    @par ADSTRANS_SERVERCYCLE
+    ADSTRANS_SERVERCYCLE
     The value is written cyclically into the FIFO at intervals of
     nCycleTime. The smallest possible value for nCycleTime is the cycle
     time of the ADS server; for the PLC, this is the task cycle time.
     The cycle time can be handled in 1ms steps. If you enter a cycle time
     of 0 ms, then the value is written into the FIFO with every task cycle.
 
-    @par ADSTRANS_SERVERONCHA
+    ADSTRANS_SERVERONCHA
     A value is only written into the FIFO if it has changed. The real-time
     sampling is executed in the time given in nCycleTime. The cycle time
     can be handled in 1ms steps. If you enter 0 ms as the cycle time, the
@@ -354,9 +355,9 @@ class AdsNotificationHeader(_AdsStructBase):
 # *
 #  @brief Type definition of the callback function required by the
 #  AdsSyncAddDeviceNotificationReqEx() function.
-#  @param[in] pAddr Structure with NetId and port number of the ADS server.
-#  @param[in] pNotification pointer to a AdsNotificationHeader structure
-#  @param[in] hUser custom handle pass to AdsSyncAddDeviceNotificationReqEx()
+#   pAddr Structure with NetId and port number of the ADS server.
+#   pNotification pointer to a AdsNotificationHeader structure
+#   hUser custom handle pass to AdsSyncAddDeviceNotificationReqEx()
 #  during registration
 # /
 # typedef void (* PAdsNotificationFuncEx)(const AmsAddr* pAddr, const
@@ -527,6 +528,20 @@ class AoEWriteRequestHeader(AoERequestHeader):
         # Inherits fields from AoERequestHeader.
         ('write_length', ctypes.c_uint32),
     ]
+
+
+@use_for_response(constants.AdsCommandId.READ_STATE)
+class AdsReadStateResponse(_AdsStructBase):
+    ads_state: int
+    dev_state: int
+
+    _fields_ = [
+        ('_ads_state', ctypes.c_uint16),
+        ('dev_state', ctypes.c_uint16),
+    ]
+
+    ads_state = _create_enum_property('_ads_state', constants.AdsState)
+    _dict_mapping = {'_ads_state': 'ads_state'}
 
 
 class AdsWriteControlRequest(_AdsStructBase):

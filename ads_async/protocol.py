@@ -3,6 +3,7 @@ import logging
 import typing
 
 from . import constants, log, structs
+from .constants import AdsCommandId
 
 module_logger = logging.getLogger(__name__)
 
@@ -68,7 +69,7 @@ def from_wire(buf, *, logger=module_logger
 
             item = (aoe_header, cmd)
 
-        yield buf, item
+        yield required_bytes, item
 
 
 class AcceptedClient:
@@ -95,35 +96,35 @@ class AcceptedClient:
     def disconnected(self):
         ...
 
-    def handle_command(self, header: structs.AoEHeader, data):
+    def handle_command(self, header: structs.AoEHeader,
+                       request: typing.Optional[structs._AdsStructBase]):
         command = header.command_id
         self.log.debug('Handling %s', command,
                        extra={'sequence': header.invoke_id})
-        if command == constants.AdsCommandId.READ_DEVICE_INFO:
-            yield self.server.device_info
-        elif command == constants.AdsCommandId.READ_WRITE:
-            ...
-        elif command == constants.AdsCommandId.READ:
-            ...
-        elif command == constants.AdsCommandId.WRITE:
-            ...
-        elif command == constants.AdsCommandId.READ_STATE:
-            ...
-        elif command == constants.AdsCommandId.WRITE_CONTROL:
-            ...
-        elif command == constants.AdsCommandId.ADD_DEVICE_NOTIFICATION:
-            ...
-        elif command == constants.AdsCommandId.DEL_DEVICE_NOTIFICATION:
-            ...
-        elif command == constants.AdsCommandId.DEVICE_NOTIFICATION:
-            ...
+        if command == AdsCommandId.READ_DEVICE_INFO:
+            yield structs.AdsDeviceInfo(*self.server.version,
+                                        name=self.server.name)
+        elif command == AdsCommandId.READ_STATE:
+            yield structs.AdsReadStateResponse(
+                self.server.ads_state,
+                0  # TODO: find docs
+            )
+        elif command in {AdsCommandId.READ_WRITE,
+                         AdsCommandId.ADD_DEVICE_NOTIFICATION,
+                         AdsCommandId.DEL_DEVICE_NOTIFICATION,
+                         AdsCommandId.DEVICE_NOTIFICATION,
+                         AdsCommandId.READ,
+                         AdsCommandId.WRITE,
+                         AdsCommandId.WRITE_CONTROL}:
+            self.server.queue_request(header, request)
 
     def received_data(self, data):
         self.recv_buffer += data
-        for buf, item in from_wire(self.recv_buffer, logger=self.log):
-            self.log.debug('Received %s', item,
-                           extra={'direction': '<<<---'})
-            self.recv_buffer = buf
+        for consumed, item in from_wire(self.recv_buffer, logger=self.log):
+            self.log.debug('%s', item,
+                           extra={'direction': '<<<---',
+                                  'bytesize': consumed})
+            self.recv_buffer = self.recv_buffer[consumed:]
             yield item
 
     def response_to_wire(
@@ -133,15 +134,10 @@ class AcceptedClient:
             ) -> bytearray:
         request_id = request_header.invoke_id
 
-        extra = {
-            'direction': '--->>>',
-            'sequence': request_id,
-        }
-
         bytes_to_send = bytearray()
-        self.log.debug('Response %s', item, extra=extra)
 
-        item_length = ctypes.sizeof(item)
+        item_length = (ctypes.sizeof(item) +
+                       ctypes.sizeof(structs.AoEResponseHeader))
         aoe_header = structs.AoEHeader.create_response(
             target=request_header.source,
             source=request_header.target,
@@ -153,17 +149,27 @@ class AcceptedClient:
         ams_tcp_header = structs.AmsTcpHeader(_AOE_HEADER_LENGTH + item_length)
 
         # TODO can multiple AoEHeaders be in a single AMS/TCP packet?
+        # AMS header -> AOE header -> response header -> response
         bytes_to_send = bytearray(ams_tcp_header)
         bytes_to_send.extend(aoe_header)
         bytes_to_send.extend(structs.AoEResponseHeader(ads_error))
         bytes_to_send.extend(item)
+
+        extra = {
+            'direction': '--->>>',
+            'sequence': request_id,
+            'bytesize': len(bytes_to_send),
+        }
+        self.log.debug('%s', item, extra=extra)
+
         return bytes_to_send
 
 
 class Server:
     _version = (0, 0, 0)  # TODO: from versioneer
 
-    def __init__(self, *, name='AdsAsync'):  # , frame_queue, database):
+    def __init__(self, *, name='AdsAsync'):
+        self._name = name
         self.frame_queue = None  # frame_queue
         self.database = None  # database
         self.clients = {}
@@ -172,8 +178,6 @@ class Server:
         }
 
         self.log = log.ComposableLogAdapter(module_logger, tags)
-        self.device_info = structs.AdsDeviceInfo(*self._version,
-                                                 name=name)
 
     def add_client(self, server_host, address):
         client = AcceptedClient(self, server_host, address)
@@ -186,5 +190,18 @@ class Server:
         self.log.info('Removing client (%d total): %s', len(self.clients),
                       client)
 
-    def received_frame(self, frame):
-        self.frame_queue.put(frame)
+    def queue_request(self, header, request):
+        print('queued', header, request)
+        # self.server.queue_request(header, request)
+
+    @property
+    def ads_state(self) -> constants.AdsState:
+        return constants.AdsState.RUN
+
+    @property
+    def version(self) -> typing.Tuple[int, int, int]:
+        return self._version
+
+    @property
+    def name(self) -> str:
+        return self._name
