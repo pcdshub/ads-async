@@ -2,20 +2,20 @@ import asyncio
 import functools
 import logging
 
-from .. import constants, protocol
+from .. import constants, protocol, structs
 from . import utils
 
 logger = logging.getLogger(__name__)
 
 
-class AsyncioClient:
+class AsyncioAcceptedClient:
     server: 'AsyncioServer'
-    client: protocol.Client
+    client: protocol.AcceptedClient
     log: logging.Logger
     reader: asyncio.StreamReader
     writer: asyncio.StreamWriter
 
-    def __init__(self, server: 'AsyncioServer', client: protocol.Client,
+    def __init__(self, server: 'AsyncioServer', client: protocol.AcceptedClient,
                  reader: asyncio.StreamReader, writer: asyncio.StreamWriter):
         self.server = server
         self.client = client
@@ -23,15 +23,24 @@ class AsyncioClient:
         self.writer = writer
         self.log = client.log
 
-    async def _handle_loop(self):
+    async def send(self, *items):
+        bytes_to_send = self.client.send(*items)
+        self.writer.write(bytes_to_send)
+        await self.writer.drain()
+
+    async def _receive_loop(self):
         while True:
             data = await self.reader.read(1024)
             if not len(data):
                 self.client.disconnected()
                 break
 
-            for item in self.client.received_data(data):
-                print('handle item')
+            for header, item in self.client.received_data(data):
+                await self._handle_command(header, item)
+
+    async def _handle_command(self, header: structs.AoEHeader, item):
+        for response in self.client.handle_command(header, item):
+            await self.send(response)
 
 
 class AsyncioServer:
@@ -78,9 +87,9 @@ class AsyncioServer:
     async def _handle_new_client(self, server_host, reader, writer):
         client_addr = writer.transport.get_extra_info('peername')
         protocol_client = self.server.add_client(server_host, client_addr)
-        client = AsyncioClient(self, protocol_client, reader, writer)
+        client = AsyncioAcceptedClient(self, protocol_client, reader, writer)
         try:
-            await client._handle_loop()
+            await client._receive_loop()
         finally:
             self.server.remove_client(client_addr)
 

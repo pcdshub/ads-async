@@ -71,6 +71,40 @@ def _create_enum_property(field_name: str,
     return property(fget, fset, doc=doc)
 
 
+def _create_byte_string_property(field_name: str, *, doc: str = None,
+                                 encoding='utf-8'):
+    """
+    Create a property which makes handling byte string fields more convenient.
+
+    Parameters
+    ----------
+    field_name : str
+        The field name (i.e., parameter 1 in the list of _fields_)
+
+    doc : str, optional
+        Documentation for the property.
+
+    encoding : str, optional
+        Attempt to decode with this decoding on access (or encode when
+        writing).
+    """
+
+    def fget(self):
+        value = getattr(self, field_name)
+
+        try:
+            return value.decode(encoding)
+        except ValueError:
+            return value
+
+    def fset(self, value):
+        if isinstance(value, str):
+            value = value.encode(encoding)
+        setattr(self, field_name, value)
+
+    return property(fget, fset, doc=doc)
+
+
 class AmsNetId(_AdsStructBase):
     """
     The NetId of and ADS device can be represented in this structure.
@@ -163,6 +197,25 @@ class AdsVersion(_AdsStructBase):
         ('revision', ctypes.c_uint8),
         ('build', ctypes.c_uint8),
     ]
+
+
+class AdsDeviceInfo(AdsVersion):
+    """Contains the version number, revision number and build number."""
+
+    _fields_ = [
+        # Inherits version information from AdsVersion
+        ('_name', ctypes.c_char * 16),
+    ]
+
+    name = _create_byte_string_property('_name', encoding='utf-8')
+    _dict_mapping = {'_name': 'name'}
+
+    def __init__(self, version: int, revision: int, build: int, name: str):
+        super().__init__()
+        self.version = version
+        self.revision = revision
+        self.build = build
+        self.name = name
 
 
 class AdsNotificationAttrib(_AdsStructBase):
