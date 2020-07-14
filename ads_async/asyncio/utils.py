@@ -47,6 +47,28 @@ class _TaskHandler:
             await asyncio.wait(tasks)
 
 
+class AsyncioQueue:
+    '''Asyncio queue modified for async/sync API compatibility.'''
+
+    def __init__(self, maxsize=0):
+        self._queue = asyncio.Queue(maxsize)
+
+    async def async_get(self):
+        return await self._queue.get()
+
+    async def async_put(self, value):
+        return await self._queue.put(value)
+
+    def get(self):
+        future = asyncio.run_coroutine_threadsafe(
+            self._queue.get(), get_running_loop())
+
+        return future.result()
+
+    def put(self, value):
+        self._queue.put_nowait(value)
+
+
 if sys.version_info < (3, 7):
     # python <= 3.6 compatibility
     def get_running_loop():

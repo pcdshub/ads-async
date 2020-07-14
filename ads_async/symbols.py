@@ -6,9 +6,15 @@ except ImportError:
 
 class SymbolDatabase:
     def __init__(self):
+        self.database = {}
+
+    def get_handle_by_name(self, name):
         ...
 
-    @classmethod
-    def from_tmc_file(cls, tmc):
+
+class TmcDatabase(SymbolDatabase):
+    def __init__(self, tmc):
+        super().__init__()
+
         if pytmc is None:
             raise RuntimeError('pytmc unavailable for .tmc file support')

@@ -420,7 +420,6 @@ class AdsReadWriteRequest(_AdsStructBase):
     """
     With ADS Read/Write `data` will be written to an ADS device. Data can also
     be read from the ADS device.
-.
 
     SYM_HNDBYNAME = 0xF003
         The data which can be read are addressed by the Index Group and the

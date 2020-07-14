@@ -7,11 +7,12 @@ from .constants import AdsCommandId
 
 module_logger = logging.getLogger(__name__)
 
+# TODO: AMS can be over serial, UDP, etc. and not just TCP
 _AMS_HEADER_LENGTH = ctypes.sizeof(structs.AmsTcpHeader)
 _AOE_HEADER_LENGTH = ctypes.sizeof(structs.AoEHeader)
 
 
-def from_wire(buf, *, logger=module_logger
+def from_wire(buf, *, logger=module_logger,
               ) -> typing.Generator[
                       typing.Tuple[structs.AoEHeader, typing.Any], None, None]:
 
@@ -116,7 +117,7 @@ class AcceptedClient:
                          AdsCommandId.READ,
                          AdsCommandId.WRITE,
                          AdsCommandId.WRITE_CONTROL}:
-            self.server.queue_request(header, request)
+            yield AsynchronousRequest(header, command)
 
     def received_data(self, data):
         self.recv_buffer += data
@@ -165,10 +166,25 @@ class AcceptedClient:
         return bytes_to_send
 
 
+class AsynchronousRequest:
+    header: structs.AoEHeader
+    command: structs._AdsStructBase
+    invoke_id: int
+
+    def __init__(self, header, command):
+        self.invoke_id = header.invoke_id
+        self.header = header
+        self.command = command
+
+    def __repr__(self):
+        return (f'<{self.__class__.__name__} invoke_id={self.invoke_id} '
+                f'command={self.command}>')
+
+
 class Server:
     _version = (0, 0, 0)  # TODO: from versioneer
 
-    def __init__(self, *, name='AdsAsync'):
+    def __init__(self, queue: typing.Type, *, name='AdsAsync'):
         self._name = name
         self.frame_queue = None  # frame_queue
         self.database = None  # database
@@ -178,6 +194,7 @@ class Server:
         }
 
         self.log = log.ComposableLogAdapter(module_logger, tags)
+        self.queue = queue
 
     def add_client(self, server_host, address):
         client = AcceptedClient(self, server_host, address)
@@ -189,10 +206,6 @@ class Server:
         client = self.clients.pop(address)
         self.log.info('Removing client (%d total): %s', len(self.clients),
                       client)
-
-    def queue_request(self, header, request):
-        print('queued', header, request)
-        # self.server.queue_request(header, request)
 
     @property
     def ads_state(self) -> constants.AdsState:

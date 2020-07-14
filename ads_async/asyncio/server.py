@@ -42,7 +42,10 @@ class AsyncioAcceptedClient:
 
     async def _handle_command(self, header: structs.AoEHeader, item):
         for response in self.client.handle_command(header, item):
-            await self.send_response(header, response)
+            if isinstance(response, protocol.AsynchronousRequest):
+                await self.server.queue_async_request(response)
+            else:
+                await self.send_response(header, response)
 
 
 class AsyncioServer:
@@ -61,7 +64,9 @@ class AsyncioServer:
         self._tasks = utils._TaskHandler()
         self._running = False
         self._shutdown_event = asyncio.Event()
-        self.server = protocol.Server()
+        self._queue = utils.AsyncioQueue()
+        self.server = protocol.Server(self._queue)
+        self.log = self.server.log
 
     async def start(self):
         if self._running:
@@ -77,11 +82,22 @@ class AsyncioServer:
                 port=self._port,
             )
 
+        self._tasks.create(self._request_queue_loop())
+
     async def stop(self):
         if self._running:
             await self._tasks.cancel_all(wait=True)
             self._shutdown_event.set()
             self._running = False
+
+    async def queue_async_request(self, request: protocol.AsynchronousRequest):
+        self._queue.put(request)
+
+    async def _request_queue_loop(self):
+        while self._running:
+            request = await self._queue.async_get()
+            self.log.debug('Handling %s', request)
+            # self._tasks.create()
 
     async def serve_forever(self):
         await self._shutdown_event.wait()
