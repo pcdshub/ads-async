@@ -374,7 +374,7 @@ class AdsSymbolEntry(_AdsStructBase):
     and a "comment"
     """
     entry_length: int
-    index_group: int
+    index_group: constants.AdsIndexGroup
     index_offset: int
     size: int
     _data_type: int
@@ -387,7 +387,7 @@ class AdsSymbolEntry(_AdsStructBase):
         # length of complete symbol entry
         ('entry_length', ctypes.c_uint32),
         # indexGroup of symbol: input, output etc.
-        ('index_group', ctypes.c_uint32),
+        ('_index_group', ctypes.c_uint32),
         # indexOffset of symbol
         ('index_offset', ctypes.c_uint32),
         # size of symbol ( in bytes, 0 = bit )
@@ -406,13 +406,26 @@ class AdsSymbolEntry(_AdsStructBase):
 
     flags = _create_enum_property('_flags', constants.AdsSymbolFlag)
     data_type = _create_enum_property('_data_type', constants.AdsDataType)
-    _dict_mapping = {'_flags': 'flags', '_data_type': 'data_type'}
+    index_group = _create_enum_property('_index_group',
+                                        constants.AdsIndexGroup)
+    _dict_mapping = {'_flags': 'flags',
+                     '_data_type': 'data_type',
+                     '_index_group': 'index_group'
+                     }
 
 
 @use_for_request(constants.AdsCommandId.READ_WRITE)
 class AdsReadWriteRequest(_AdsStructBase):
-    """Used to read/write a symbol."""
-    index_group: int
+    """
+    With ADS Read/Write `data` will be written to an ADS device. Data can also
+    be read from the ADS device.
+.
+
+    SYM_HNDBYNAME = 0xF003
+        The data which can be read are addressed by the Index Group and the
+        Index Offset, or by way of symbol name (held in data).
+    """
+    index_group: constants.AdsIndexGroup
     index_offset: int
     read_length: int
     write_length: int
@@ -420,7 +433,7 @@ class AdsReadWriteRequest(_AdsStructBase):
     data: typing.Any = None
 
     _fields_ = [
-        ('index_group', ctypes.c_uint32),
+        ('_index_group', ctypes.c_uint32),
         ('index_offset', ctypes.c_uint32),
         ('read_length', ctypes.c_uint32),
         ('write_length', ctypes.c_uint32),
@@ -435,23 +448,30 @@ class AdsReadWriteRequest(_AdsStructBase):
             buf[data_start:data_start + struct.write_length])
         return struct
 
-    _dict_mapping = {'_data_start': 'data'}
+    index_group = _create_enum_property('_index_group',
+                                        constants.AdsIndexGroup)
+    _dict_mapping = {'_data_start': 'data',
+                     '_index_group': 'index_group'}
 
 
 class AdsSymbolInfoByName(_AdsStructBase):
     """Used to provide ADS symbol information for ADS SUM commands."""
     # indexGroup of symbol: input, output etc.
-    index_group: int
+    index_group: constants.AdsIndexGroup
     index_offset: int
     length: int
 
     _fields_ = [
-        ('index_group', ctypes.c_uint32),
+        ('_index_group', ctypes.c_uint32),
         # indexOffset of symbol
         ('index_offset', ctypes.c_uint32),
         # Length of the data
         ('length', ctypes.c_uint32),
     ]
+
+    index_group = _create_enum_property('_index_group',
+                                        constants.AdsIndexGroup)
+    _dict_mapping = {'_index_group': 'index_group'}
 
 
 class AmsTcpHeader(_AdsStructBase):

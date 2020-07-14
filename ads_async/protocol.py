@@ -44,28 +44,31 @@ def from_wire(buf, *, logger=module_logger
 
         buf = buf[required_bytes:]
 
-        if expected_size == required_bytes:
-            try:
-                cmd_cls = structs.get_struct_by_command(
-                    aoe_header.command_id, request=aoe_header.is_request)
-            except KeyError:
-                payload = view[:aoe_header.length]
-            else:
-                if hasattr(cmd_cls, 'from_buffer_extended'):
-                    # TODO: can't call super().from_buffer in a subclass
-                    # classmethod?
-                    payload = cmd_cls.from_buffer_extended(view)
-                else:
-                    payload = cmd_cls.from_buffer(view)
-
-            yield buf, (aoe_header, payload)
-        else:
+        if expected_size != required_bytes:
             logger.warning(
                 'Throwing away packet as lengths do not add up: '
                 'AMS=%d AOE=%d payload=%d -> %d != AMS-header specified %d',
                 _AMS_HEADER_LENGTH, _AOE_HEADER_LENGTH, aoe_header.length,
                 expected_size, required_bytes
             )
+            item = None
+        else:
+            try:
+                cmd_cls = structs.get_struct_by_command(
+                    aoe_header.command_id, request=aoe_header.is_request)
+            except KeyError:
+                cmd = view[:aoe_header.length]
+            else:
+                if hasattr(cmd_cls, 'from_buffer_extended'):
+                    # TODO: can't call super.from_buffer in a subclass
+                    # classmethod?
+                    cmd = cmd_cls.from_buffer_extended(view)
+                else:
+                    cmd = cmd_cls.from_buffer(view)
+
+            item = (aoe_header, cmd)
+
+        yield buf, item
 
 
 class AcceptedClient:

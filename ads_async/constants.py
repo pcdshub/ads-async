@@ -68,9 +68,9 @@ class AoEHeaderFlag(enum.IntFlag):
 
 class AdsIndexGroup(enum.IntEnum):
     # ADS reserved index groups
-    SYMTAB = 0xF000
-    SYMNAME = 0xF001
-    SYMVAL = 0xF002
+    SYM_TAB = 0xF000
+    SYM_NAME = 0xF001
+    SYM_VAL = 0xF002
 
     SYM_HNDBYNAME = 0xF003
     SYM_VALBYNAME = 0xF004
