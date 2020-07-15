@@ -11,6 +11,7 @@ recursive-include docs *.rst conf.py Makefile make.bat
 
 include versioneer.py
 include ads_async/_version.py
+include ads_async/tests/*.tmc
 
 # If including data files in the package, add them like:
 # include path/to/data_file

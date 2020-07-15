@@ -3,6 +3,11 @@ import pytest
 import ads_async
 
 
+@pytest.fixture(scope='module')
+def tmc_filename():
+    return 'kmono.tmc'
+
+
 @pytest.fixture(scope='function')
 def memory():
     return ads_async.symbols.PlcMemory(1000)
@@ -20,3 +25,12 @@ def test_symbol(memory):
     sym.write(value)
     assert sym.read().value == value
     assert sym.value.value == value
+
+
+def test_tmc(tmc_filename):
+    db = ads_async.symbols.TmcDatabase(tmc_filename)
+    for data_area in db.data_areas:
+        print()
+        print(data_area)
+        for _, symbol in data_area.symbols.items():
+            print(symbol)
