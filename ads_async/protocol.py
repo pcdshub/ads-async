@@ -207,9 +207,8 @@ class AsynchronousRequest:
 class Server:
     _version = (0, 0, 0)  # TODO: from versioneer
 
-    def __init__(self, queue: typing.Type, *, name='AdsAsync'):
+    def __init__(self, *, name='AdsAsync'):
         self._name = name
-        self.frame_queue = None  # frame_queue
         self.database = None  # database
         self.clients = {}
         tags = {
@@ -217,7 +216,6 @@ class Server:
         }
 
         self.log = log.ComposableLogAdapter(module_logger, tags)
-        self.queue = queue
 
     def add_client(self, server_host, address):
         client = AcceptedClient(self, server_host, address)

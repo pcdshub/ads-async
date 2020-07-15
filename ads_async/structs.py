@@ -644,22 +644,37 @@ class AoEHeader(_AdsStructBase):
 
 class AoEResponseHeader(_AdsStructBase):
     _fields_ = [
-        ('result', ctypes.c_uint32),
+        ('_result', ctypes.c_uint32),
     ]
+
+    result = _create_enum_property('_result', constants.AdsError)
+    _dict_mapping = {'_result': 'result'}
 
 
 class AoEReadResponseHeader(AoEResponseHeader):
     _fields_ = [
+        # Inherits 'result' from AoEResponseHeader
         ('read_length', ctypes.c_uint32),
     ]
+
+    def __init__(self, *,
+                 result: constants.AdsError = constants.AdsError.NOERR,
+                 read_length: int,
+                 ):
+        super().__init__(result, read_length)
 
 
 class AoEHandleResponse(AoEResponseHeader):
     _fields_ = [
+        # Inherits 'result' from AoEResponseHeader
         ('length', ctypes.c_uint32),
         ('handle', ctypes.c_uint32),
     ]
 
-    def __init__(self, handle: int):
-        super().__init__(ctypes.sizeof(ctypes.c_uint32),
+    def __init__(self, *,
+                 result: constants.AdsError = constants.AdsError.NOERR,
+                 handle: int,
+                 ):
+        super().__init__(result,
+                         ctypes.sizeof(ctypes.c_uint32),
                          handle)

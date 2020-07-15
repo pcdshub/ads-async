@@ -23,9 +23,10 @@ class AsyncioAcceptedClient:
         self.reader = reader
         self.writer = writer
         self.log = client.log
+        self._queue = utils.AsyncioQueue()
 
-    async def send_response(self, request_header, *items,
-                            response_header=None):
+    async def send_response(self, *items,
+                            request_header, response_header=None):
         bytes_to_send = self.client.response_to_wire(
             *items, response_header=response_header,
             request_header=request_header)
@@ -33,6 +34,7 @@ class AsyncioAcceptedClient:
         await self.writer.drain()
 
     async def _receive_loop(self):
+        self.server._tasks.create(self._request_queue_loop())
         while True:
             data = await self.reader.read(1024)
             if not len(data):
@@ -46,9 +48,33 @@ class AsyncioAcceptedClient:
         for response in self.client.handle_command(header, item):
             if isinstance(response, protocol.AsynchronousRequest):
                 response.requester = self
-                await self.server.queue_async_request(response)
+                await self._queue.async_put(response)
             else:
-                await self.send_response(header, response)
+                await self.send_response(response, request_header=header)
+
+    async def _request_queue_loop(self):
+        server = self.server
+        while server.running:
+            request = await self._queue.async_get()
+            self.log.debug('Handling %s', request)
+
+            index_group = request.command.index_group
+            if index_group == constants.AdsIndexGroup.SYM_HNDBYNAME:
+                await self.send_response(
+                    request_header=request.header,
+                    response_header=structs.AoEHandleResponse(handle=123),
+                )
+            elif index_group == constants.AdsIndexGroup.SYM_INFOBYNAMEEX:
+                import ctypes
+                sym = structs.AdsSymbolEntry()
+                header = structs.AoEReadResponseHeader(
+                    read_length=ctypes.sizeof(sym))
+                await self.send_response(
+                    sym,
+                    request_header=request.header,
+                    response_header=header,
+                )
+            # self._tasks.create()
 
 
 class AsyncioServer:
@@ -67,9 +93,12 @@ class AsyncioServer:
         self._tasks = utils._TaskHandler()
         self._running = False
         self._shutdown_event = asyncio.Event()
-        self._queue = utils.AsyncioQueue()
-        self.server = protocol.Server(self._queue)
+        self.server = protocol.Server()
         self.log = self.server.log
+
+    @property
+    def running(self) -> bool:
+        return self._running
 
     async def start(self):
         if self._running:
@@ -85,39 +114,11 @@ class AsyncioServer:
                 port=self._port,
             )
 
-        self._tasks.create(self._request_queue_loop())
-
     async def stop(self):
         if self._running:
             await self._tasks.cancel_all(wait=True)
             self._shutdown_event.set()
             self._running = False
-
-    async def queue_async_request(self, request: protocol.AsynchronousRequest):
-        self._queue.put(request)
-
-    async def _request_queue_loop(self):
-        while self._running:
-            request = await self._queue.async_get()
-            self.log.debug('Handling %s', request)
-            client = request.requester  # type: AsyncioAcceptedClient
-
-            index_group = request.command.index_group
-            if index_group == constants.AdsIndexGroup.SYM_HNDBYNAME:
-                await client.send_response(
-                    request_header=request.header,
-                    response_header=structs.AoEHandleResponse(123),
-                )
-            elif index_group == constants.AdsIndexGroup.SYM_INFOBYNAMEEX:
-                import ctypes
-                sym = structs.AdsSymbolEntry()
-                header = structs.AoEReadResponseHeader(ctypes.sizeof(sym))
-                await client.send_response(
-                    sym,
-                    request_header=request.header,
-                    response_header=header,
-                )
-            # self._tasks.create()
 
     async def serve_forever(self):
         await self._shutdown_event.wait()
