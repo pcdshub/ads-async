@@ -384,6 +384,9 @@ class AdsSymbolEntry(_AdsStructBase):
     name_length: int
     type_length: int
     comment_length: int
+    name: str
+    type_name: str
+    comment: str
 
     _fields_ = [
         # length of complete symbol entry
@@ -404,6 +407,7 @@ class AdsSymbolEntry(_AdsStructBase):
         ('type_length', ctypes.c_uint16),
         # length of comment (null terminating character not counted)
         ('comment_length', ctypes.c_uint16),
+        ('_data_start', ctypes.c_uint8 * 0),
     ]
 
     flags = _create_enum_property('_flags', constants.AdsSymbolFlag)
@@ -415,6 +419,75 @@ class AdsSymbolEntry(_AdsStructBase):
                      '_data_type': 'data_type',
                      '_index_group': 'index_group'
                      }
+
+    def __init__(self,
+                 index_group: constants.AdsIndexGroup,
+                 index_offset: int,
+                 size: int,
+                 data_type: constants.AdsDataType,
+                 flags: constants.AdsSymbolFlag,
+                 name: str,
+                 type_name: str,
+                 comment: str):
+        super().__init__(0,  # will be filled in later
+                         index_group,
+                         index_offset,
+                         size,
+                         data_type,
+                         flags,
+                         0,
+                         0,
+                         0,
+                         )
+        self.name = name
+        self.type_name = type_name
+        self.comment = comment
+        self._update_lengths()
+
+    @property
+    def _payload_length(self):
+        return sum(
+            (self.name_length,
+             self.type_length,
+             self.comment_length,
+             3,  # 3 null terminators not included in length
+         ))
+
+    def _update_lengths(self):
+        self.name_length = len(self.name)
+        self.type_length = len(self.type_name)
+        self.comment_length = len(self.comment)
+        self.entry_length = ctypes.sizeof(AdsSymbolEntry) + self._payload_length
+
+    @classmethod
+    def from_buffer_extended(cls, buf):
+        struct = cls.from_buffer(buf)
+
+        data_start = AdsSymbolEntry._data_start.offset
+        data_length = struct._payload_length
+        struct.data = bytearray(buf[data_start:data_start + data_length])
+
+        view = memoryview(struct.data)
+        struct.name = str(view[:struct.name_length],
+                          constants.ADS_ASYNC_STRING_ENCODING)
+        view = view[struct.name_length + 1:]
+
+        struct.type_name = str(view[:struct.type_length],
+                               constants.ADS_ASYNC_STRING_ENCODING)
+        view = view[struct.type_length + 1:]
+
+        struct.comment = str(view[:struct.comment_length],
+                             constants.ADS_ASYNC_STRING_ENCODING)
+        return struct
+
+    def __bytes__(self):
+        # TODO hack for now (?)
+        self._update_lengths()
+        packed = bytearray(self)
+        packed.extend([s.encode(constants.ADS_ASYNC_STRING_ENCODING) + b'\x00'
+                       for s in (self.name, self.type_name, self.comment)
+                       ])
+        return bytes(packed)
 
 
 @use_for_request(constants.AdsCommandId.READ_WRITE)

@@ -141,26 +141,45 @@ class AcceptedClient:
 
     def _handle_read_write(self, header: structs.AoEHeader,
                            request: structs.AdsReadWriteRequest):
-        if request.index_group == constants.AdsIndexGroup.SYM_HNDBYNAME:
+        def get_symbol_by_name():
             symbol_name = request.data_as_symbol_name
+            return self.server.database.get_symbol_by_name(symbol_name)
+
+        if request.index_group == constants.AdsIndexGroup.SYM_HNDBYNAME:
             try:
-                symbol = self.server.database.get_symbol_by_name(
-                    symbol_name)
+                symbol = get_symbol_by_name()
             except KeyError:
-                yield ErrorResponse(
+                return ErrorResponse(
                     code=constants.AdsError.DEVICE_SYMBOLNOTFOUND,
                     reason=f'{symbol_name} not in database'
                 )
-                return
 
-            # TODO: can handles be reused?
-            # try:
-            #     handle = self.symbol_to_handle[symbol_name]
-            # except KeyError:
-            #     ...
             handle = self._handle_counter()
             self.handle_to_symbol[handle] = symbol
             yield structs.AoEHandleResponse(handle=handle)
+
+        elif request.index_group == constants.AdsIndexGroup.SYM_INFOBYNAMEEX:
+            try:
+                symbol = get_symbol_by_name()
+            except KeyError:
+                return ErrorResponse(
+                    code=constants.AdsError.DEVICE_SYMBOLNOTFOUND,
+                    reason=f'{symbol_name} not in database'
+                )
+
+            entry = structs.AdsSymbolEntry(
+                sym.
+            )
+            header = structs.AoEReadResponseHeader(
+                read_length=ctypes.sizeof(sym))
+            await self.send_response(
+                sym,
+                request_header=request.header,
+                response_header=header,
+            )
+            yield structs.AdsSymbolEntry(
+
+            )
         else:
             yield AsynchronousResponse(header, request, self)
 

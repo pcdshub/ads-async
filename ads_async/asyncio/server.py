@@ -72,20 +72,7 @@ class AsyncioAcceptedClient:
 
             index_group = request.command.index_group
             if index_group == constants.AdsIndexGroup.SYM_HNDBYNAME:
-                await self.send_response(
-                    request_header=request.header,
-                    response_header=structs.AoEHandleResponse(handle=123),
-                )
-            elif index_group == constants.AdsIndexGroup.SYM_INFOBYNAMEEX:
-                import ctypes
-                sym = structs.AdsSymbolEntry()
-                header = structs.AoEReadResponseHeader(
-                    read_length=ctypes.sizeof(sym))
-                await self.send_response(
-                    sym,
-                    request_header=request.header,
-                    response_header=header,
-                )
+                ...
             # self._tasks.create()
 
 

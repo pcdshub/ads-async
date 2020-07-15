@@ -31,9 +31,14 @@ class PlcMemory:
         self.memory[offset:offset + size] = data
 
 
+class DataArea:
+    ...
+
+
 class Symbol:
     name: str
     data_type: AdsDataType
+    data_area: DataArea
     ctypes_data_type: type(ctypes.c_uint8)
     size: int
     array_length: int
@@ -43,8 +48,10 @@ class Symbol:
                  offset: int,
                  data_type: constants.AdsDataType,
                  array_length: int,
+                 data_area: DataArea,
                  memory: PlcMemory):
         self.name = name
+        self.data_area = data_area
         self.offset = offset
         self.array_length = array_length
         self.data_type = data_type
@@ -77,7 +84,7 @@ class Symbol:
         )
 
 
-class TmcDataArea:
+class TmcDataArea(DataArea):
     memory: PlcMemory
     area_type: str
     symbols: typing.Mapping[str, Symbol]
@@ -118,6 +125,7 @@ class TmcDataArea:
 
         symbol = self.symbols[tmc_symbol.name] = Symbol(
             tmc_symbol.name,
+            data_area=self,
             offset=offset,
             data_type=data_type,
             array_length=array_length,
@@ -178,7 +186,7 @@ class DataAreaIndexGroup(enum.Enum):
 
 
 class Database:
-    def get_symbol_by_name(self, symbol_name):
+    def get_symbol_by_name(self, symbol_name) -> Symbol:
         raise KeyError(symbol_name)
 
 
@@ -202,7 +210,7 @@ class TmcDatabase(Database):
         self.index_groups = {}
         self._load_data_areas()
 
-    def get_symbol_by_name(self, symbol_name):
+    def get_symbol_by_name(self, symbol_name) -> Symbol:
         for data_area in self.data_areas:
             try:
                 return data_area.symbols[symbol_name]
