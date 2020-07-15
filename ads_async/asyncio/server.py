@@ -2,7 +2,7 @@ import asyncio
 import functools
 import logging
 
-from .. import constants, protocol, structs
+from .. import constants, protocol, structs, symbols
 from . import utils
 
 logger = logging.getLogger(__name__)
@@ -24,12 +24,15 @@ class AsyncioAcceptedClient:
         self.writer = writer
         self.log = client.log
         self._queue = utils.AsyncioQueue()
+        self._handle_index = 0
 
-    async def send_response(self, *items,
-                            request_header, response_header=None):
+    async def send_response(
+            self, *items, request_header, response_header=None,
+            ads_error: constants.AdsError = constants.AdsError.NOERR):
         bytes_to_send = self.client.response_to_wire(
             *items, response_header=response_header,
-            request_header=request_header)
+            request_header=request_header,
+            ads_error=ads_error)
         self.writer.write(bytes_to_send)
         await self.writer.drain()
 
@@ -46,9 +49,18 @@ class AsyncioAcceptedClient:
 
     async def _handle_command(self, header: structs.AoEHeader, item):
         for response in self.client.handle_command(header, item):
-            if isinstance(response, protocol.AsynchronousRequest):
+            if isinstance(response, protocol.AsynchronousResponse):
                 response.requester = self
                 await self._queue.async_put(response)
+            elif isinstance(response, protocol.ErrorResponse):
+                self.log.error('Error response: %r', response)
+                await self.send_response(request_header=header,
+                                         ads_error=response.code,
+                                         )
+            elif isinstance(response, structs.AoEResponseHeader):
+                # TODO: confusing how this is structured
+                await self.send_response(request_header=header,
+                                         response_header=response)
             else:
                 await self.send_response(response, request_header=header)
 
@@ -86,6 +98,7 @@ class AsyncioServer:
     server: protocol.Server
 
     def __init__(self,
+                 database: symbols.Database,
                  port: int = constants.ADS_TCP_SERVER_PORT,
                  hosts: list = None):
         self._port = port
@@ -93,8 +106,9 @@ class AsyncioServer:
         self._tasks = utils._TaskHandler()
         self._running = False
         self._shutdown_event = asyncio.Event()
-        self.server = protocol.Server()
+        self.server = protocol.Server(database)
         self.log = self.server.log
+        self.database = database
 
     @property
     def running(self) -> bool:
@@ -138,7 +152,15 @@ if __name__ == '__main__':
 
     async def test():
         global server
-        server = AsyncioServer()
+        from ..symbols import TmcDatabase
+        import pathlib
+        module_path = pathlib.Path(__file__).parent.parent
+        database = TmcDatabase(module_path / 'tests' / 'kmono.tmc')
+        for data_area in database.data_areas:
+            for name, symbol in data_area.symbols.items():
+                print(name, symbol)
+
+        server = AsyncioServer(database)
         await server.start()
         await server.serve_forever()
 

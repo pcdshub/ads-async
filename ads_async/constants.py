@@ -1,7 +1,10 @@
 import ctypes
 import enum
+import os
 
 ADS_TCP_SERVER_PORT = 0xBF02
+ADS_ASYNC_STRING_ENCODING = os.environ.get('ADS_ASYNC_STRING_ENCODING',
+                                           'utf-8')
 
 
 class AmsPort(enum.IntEnum):

@@ -2,8 +2,9 @@ import ctypes
 import logging
 import typing
 
-from . import constants, log, structs
+from . import constants, log, structs, utils
 from .constants import AdsCommandId
+from .symbols import Database
 
 module_logger = logging.getLogger(__name__)
 
@@ -95,6 +96,7 @@ def response_to_wire(
                 command_id=request_header.command_id,
                 invoke_id=request_header.invoke_id,
                 length=item_length,
+                error_code=ads_error,
             ),
         *items,  # includes response header
     ]
@@ -114,6 +116,13 @@ class AcceptedClient:
         self.server = server
         self.server_host = server_host
         self.address = address
+        self.handle_to_symbol = {}
+        # self.symbol_to_handle = {}
+        self._handle_counter = utils.ThreadsafeCounter(
+            max_count=2 ** 32,  # handles are uint32
+            dont_clash_with=self.handle_to_symbol,
+        )
+
         tags = {
             'role': 'CLIENT',
             'our_address': address,
@@ -130,6 +139,31 @@ class AcceptedClient:
     def disconnected(self):
         ...
 
+    def _handle_read_write(self, header: structs.AoEHeader,
+                           request: structs.AdsReadWriteRequest):
+        if request.index_group == constants.AdsIndexGroup.SYM_HNDBYNAME:
+            symbol_name = request.data_as_symbol_name
+            try:
+                symbol = self.server.database.get_symbol_by_name(
+                    symbol_name)
+            except KeyError:
+                yield ErrorResponse(
+                    code=constants.AdsError.DEVICE_SYMBOLNOTFOUND,
+                    reason=f'{symbol_name} not in database'
+                )
+                return
+
+            # TODO: can handles be reused?
+            # try:
+            #     handle = self.symbol_to_handle[symbol_name]
+            # except KeyError:
+            #     ...
+            handle = self._handle_counter()
+            self.handle_to_symbol[handle] = symbol
+            yield structs.AoEHandleResponse(handle=handle)
+        else:
+            yield AsynchronousResponse(header, request, self)
+
     def handle_command(self, header: structs.AoEHeader,
                        request: typing.Optional[structs._AdsStructBase]):
         command = header.command_id
@@ -143,14 +177,15 @@ class AcceptedClient:
                 self.server.ads_state,
                 0  # TODO: find docs
             )
-        elif command in {AdsCommandId.READ_WRITE,
-                         AdsCommandId.ADD_DEVICE_NOTIFICATION,
+        elif command == AdsCommandId.READ_WRITE:
+            yield from self._handle_read_write(header, request)
+        elif command in {AdsCommandId.ADD_DEVICE_NOTIFICATION,
                          AdsCommandId.DEL_DEVICE_NOTIFICATION,
                          AdsCommandId.DEVICE_NOTIFICATION,
                          AdsCommandId.READ,
                          AdsCommandId.WRITE,
                          AdsCommandId.WRITE_CONTROL}:
-            yield AsynchronousRequest(header, request, self)
+            yield AsynchronousResponse(header, request, self)
 
     def received_data(self, data):
         self.recv_buffer += data
@@ -187,7 +222,19 @@ class AcceptedClient:
         return bytes_to_send
 
 
-class AsynchronousRequest:
+class ErrorResponse:
+    code: constants.AdsError
+    reason: str
+
+    def __init__(self, code: constants.AdsError, reason: str = ''):
+        self.code = code
+        self.reason = reason
+
+    def __repr__(self):
+        return f'<ErrorResponse {self.code} ({self.reason})>'
+
+
+class AsynchronousResponse:
     header: structs.AoEHeader
     command: structs._AdsStructBase
     invoke_id: int
@@ -207,9 +254,9 @@ class AsynchronousRequest:
 class Server:
     _version = (0, 0, 0)  # TODO: from versioneer
 
-    def __init__(self, *, name='AdsAsync'):
+    def __init__(self, database: Database, *, name='AdsAsync'):
         self._name = name
-        self.database = None  # database
+        self.database = database
         self.clients = {}
         tags = {
             'role': 'SERVER',
@@ -242,4 +289,5 @@ class Server:
 
 
 def serialize_data(data_type: constants.AdsDataType, data: typing.Any):
+    # TODO: endian swapping for data? :(
     ...

@@ -4,6 +4,8 @@ import threading
 
 
 class _TaskHandler:
+    # Borrowed from caproto
+
     def __init__(self):
         self.tasks = []
         self._lock = threading.Lock()

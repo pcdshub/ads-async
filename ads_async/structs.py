@@ -112,7 +112,7 @@ def _create_enum_property(field_name: str,
 
 
 def _create_byte_string_property(field_name: str, *, doc: str = None,
-                                 encoding='utf-8'):
+                                 encoding=constants.ADS_ASYNC_STRING_ENCODING):
     """
     Create a property which makes handling byte string fields more convenient.
 
@@ -258,7 +258,8 @@ class AdsDeviceInfo(AdsVersion):
         ('_name', ctypes.c_char * 16),
     ]
 
-    name = _create_byte_string_property('_name', encoding='utf-8')
+    name = _create_byte_string_property(
+        '_name', encoding=constants.ADS_ASYNC_STRING_ENCODING)
     _dict_mapping = {'_name': 'name'}
 
     def __init__(self, version: int, revision: int, build: int, name: str):
@@ -448,6 +449,16 @@ class AdsReadWriteRequest(_AdsStructBase):
         struct.data = bytearray(
             buf[data_start:data_start + struct.write_length])
         return struct
+
+    @property
+    def data_as_symbol_name(self) -> str:
+        """Data payload decoded as a symbol name."""
+        if self.data is None:
+            # from_buffer_extended wasn't called?
+            return None  # pragma: no cover
+
+        name = self.data.decode(constants.ADS_ASYNC_STRING_ENCODING)
+        return name.split('\x00')[0]
 
     index_group = _create_enum_property('_index_group',
                                         constants.AdsIndexGroup,

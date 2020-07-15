@@ -1,6 +1,7 @@
 import ctypes
 import enum
 import logging
+import typing
 
 from . import constants
 from .constants import AdsDataType
@@ -77,6 +78,10 @@ class Symbol:
 
 
 class TmcDataArea:
+    memory: PlcMemory
+    area_type: str
+    symbols: typing.Mapping[str, Symbol]
+
     def __init__(self, area_type, *, memory: PlcMemory = None,
                  memory_size=None):
         self.area_type = area_type
@@ -172,7 +177,16 @@ class DataAreaIndexGroup(enum.Enum):
     # RedundancyDst
 
 
-class TmcDatabase:
+class Database:
+    def get_symbol_by_name(self, symbol_name):
+        raise KeyError(symbol_name)
+
+
+class TmcDatabase(Database):
+    tmc: 'pytmc.parser.TcModuleClass'
+    data_areas: typing.List[TmcDataArea]
+    index_groups: typing.Mapping[constants.AdsIndexGroup, TmcDataArea]
+
     def __init__(self, tmc):
         super().__init__()
 
@@ -187,6 +201,15 @@ class TmcDatabase:
         self.data_areas = []
         self.index_groups = {}
         self._load_data_areas()
+
+    def get_symbol_by_name(self, symbol_name):
+        for data_area in self.data_areas:
+            try:
+                return data_area.symbols[symbol_name]
+            except KeyError:
+                ...
+
+        raise KeyError(symbol_name)
 
     def _load_data_areas(self):
         for tmc_area in self.tmc.find(pytmc.parser.DataArea):
