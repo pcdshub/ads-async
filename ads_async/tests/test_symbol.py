@@ -10,7 +10,7 @@ def memory():
 
 def test_symbol(memory):
     sym = ads_async.symbols.Symbol(
-        group=ads_async.constants.AdsIndexGroup.PLC_DATA_AREA,
+        name='test',
         offset=0,
         data_type=ads_async.constants.AdsDataType.INT32,
         array_length=1,
@@ -18,5 +18,5 @@ def test_symbol(memory):
 
     value = 0x2345
     sym.write(value)
-    assert sym.read()[0] == value
-    assert sym.value[0] == value
+    assert sym.read().value == value
+    assert sym.value.value == value

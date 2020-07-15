@@ -47,8 +47,12 @@ class Symbol:
         self.offset = offset
         self.array_length = array_length
         self.data_type = data_type
-        self.ctypes_data_type = (array_length *
-                                 AdsDataType.to_ctypes[self.data_type])
+
+        ctypes_base_type = AdsDataType.to_ctypes[self.data_type]
+        if array_length > 1:
+            self.ctypes_data_type = (array_length * ctypes_base_type)
+        else:
+            self.ctypes_data_type = ctypes_base_type
         self.size = ctypes.sizeof(self.ctypes_data_type)
         self.memory = memory
 
@@ -65,9 +69,11 @@ class Symbol:
     def value(self):
         return self.read()
 
-    def serialize(self):
-        # self.data_type, self.value
-        ...
+    def __repr__(self):
+        return (
+            f'<{self.__class__.__name__} name={self.name!r} '
+            f'value={self.value}>'
+        )
 
 
 class TmcDataArea:
@@ -115,7 +121,7 @@ class TmcDataArea:
         return symbol
 
     def __repr__(self):
-        return f'<DataArea {self.area_type}>'
+        return f'<{self.__class__.__name__} {self.area_type}>'
 
 
 class TmcTypes(enum.Enum):
