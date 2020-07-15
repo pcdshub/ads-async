@@ -58,6 +58,7 @@ def from_wire(buf, *, logger=module_logger,
             try:
                 cmd_cls = structs.get_struct_by_command(
                     aoe_header.command_id, request=aoe_header.is_request)
+                cmd = None
             except KeyError:
                 cmd = view[:aoe_header.length]
             else:
@@ -71,6 +72,38 @@ def from_wire(buf, *, logger=module_logger,
             item = (aoe_header, cmd)
 
         yield required_bytes, item
+
+
+def response_to_wire(
+        *items: structs._AdsStructBase,
+        request_header: structs.AoEHeader,
+        response_header: structs.AoEResponseHeader = None,
+        ads_error: constants.AdsError = constants.AdsError.NOERR
+        ) -> typing.Tuple[list, bytearray]:
+
+    if response_header is None:
+        response_header = structs.AoEResponseHeader(ads_error)
+
+    items = [response_header] + list(items)
+    item_length = sum(ctypes.sizeof(item) for item in items)
+
+    full_frame = [
+        structs.AmsTcpHeader(_AOE_HEADER_LENGTH + item_length),
+        structs.AoEHeader.create_response(
+                target=request_header.source,
+                source=request_header.target,
+                command_id=request_header.command_id,
+                invoke_id=request_header.invoke_id,
+                length=item_length,
+            ),
+        *items,  # includes response header
+    ]
+
+    bytes_to_send = bytearray(full_frame[0])
+    for item in full_frame[1:]:
+        bytes_to_send.extend(item)
+
+    return full_frame, bytes_to_send
 
 
 class AcceptedClient:
@@ -131,38 +164,20 @@ class AcceptedClient:
     def response_to_wire(
             self, *items: structs._AdsStructBase,
             request_header: structs.AoEHeader,
+            response_header: structs.AoEResponseHeader = None,
             ads_error: constants.AdsError = constants.AdsError.NOERR
             ) -> bytearray:
-        request_id = request_header.invoke_id
 
-        bytes_to_send = bytearray()
-
-        item_length = (
-            sum(ctypes.sizeof(item) for item in items) +
-            ctypes.sizeof(structs.AoEResponseHeader)
+        items, bytes_to_send = response_to_wire(
+            *items,
+            request_header=request_header,
+            response_header=response_header,
+            ads_error=ads_error
         )
-
-        aoe_header = structs.AoEHeader.create_response(
-            target=request_header.source,
-            source=request_header.target,
-            command_id=request_header.command_id,
-            invoke_id=request_id,
-            length=item_length,
-        )
-
-        ams_tcp_header = structs.AmsTcpHeader(_AOE_HEADER_LENGTH + item_length)
-
-        # TODO can multiple AoEHeaders be in a single AMS/TCP packet?
-        # AMS header -> AOE header -> response header -> response
-        bytes_to_send = bytearray(ams_tcp_header)
-        bytes_to_send.extend(aoe_header)
-        bytes_to_send.extend(structs.AoEResponseHeader(ads_error))
-        for item in items:
-            bytes_to_send.extend(item)
 
         extra = {
             'direction': '--->>>',
-            'sequence': request_id,
+            'sequence': request_header.invoke_id,
             'bytesize': len(bytes_to_send),
         }
         for idx, item in enumerate(items, 1):

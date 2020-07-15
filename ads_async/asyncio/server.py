@@ -24,9 +24,11 @@ class AsyncioAcceptedClient:
         self.writer = writer
         self.log = client.log
 
-    async def send_response(self, request_header, *items):
+    async def send_response(self, request_header, *items,
+                            response_header=None):
         bytes_to_send = self.client.response_to_wire(
-            *items, request_header=request_header)
+            *items, response_header=response_header,
+            request_header=request_header)
         self.writer.write(bytes_to_send)
         await self.writer.drain()
 
@@ -103,16 +105,17 @@ class AsyncioServer:
             index_group = request.command.index_group
             if index_group == constants.AdsIndexGroup.SYM_HNDBYNAME:
                 await client.send_response(
-                    request.header,
-                    structs.AoEHandleResponse(123),
+                    request_header=request.header,
+                    response_header=structs.AoEHandleResponse(123),
                 )
             elif index_group == constants.AdsIndexGroup.SYM_INFOBYNAMEEX:
                 import ctypes
                 sym = structs.AdsSymbolEntry()
+                header = structs.AoEReadResponseHeader(ctypes.sizeof(sym))
                 await client.send_response(
-                    request.header,
-                    structs.AoEReadResponseHeader(ctypes.sizeof(sym)),
                     sym,
+                    request_header=request.header,
+                    response_header=header,
                 )
             # self._tasks.create()
 
@@ -141,4 +144,4 @@ if __name__ == '__main__':
     from .. import log
     log.configure(level='DEBUG')
 
-    asyncio.run(test())
+    asyncio.run(test(), debug=True)

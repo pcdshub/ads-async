@@ -648,13 +648,13 @@ class AoEResponseHeader(_AdsStructBase):
     ]
 
 
-class AoEReadResponseHeader(_AdsStructBase):
+class AoEReadResponseHeader(AoEResponseHeader):
     _fields_ = [
         ('read_length', ctypes.c_uint32),
     ]
 
 
-class AoEHandleResponse(_AdsStructBase):
+class AoEHandleResponse(AoEResponseHeader):
     _fields_ = [
         ('length', ctypes.c_uint32),
         ('handle', ctypes.c_uint32),
