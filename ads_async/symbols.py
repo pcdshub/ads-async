@@ -31,19 +31,19 @@ class PlcMemory:
 
 
 class Symbol:
-    index_group: int
+    name: str
     data_type: AdsDataType
     ctypes_data_type: type(ctypes.c_uint8)
     size: int
     array_length: int
 
     def __init__(self,
-                 group: constants.AdsIndexGroup,
+                 name: str,
                  offset: int,
                  data_type: constants.AdsDataType,
                  array_length: int,
                  memory: PlcMemory):
-        self.group = group
+        self.name = name
         self.offset = offset
         self.array_length = array_length
         self.data_type = data_type
@@ -70,29 +70,65 @@ class Symbol:
         ...
 
 
-class SymbolDatabase:
-    def __init__(self):
-        self.symbols = {'MAIN.scale': Symbol()}
-        self.index_groups = {
-            constants.AdsIndexGroup.PLC_DATA_AREA: {},
-        }
-        self.handles = {}
+class TmcDataArea:
+    def __init__(self, area_type, *, memory: PlcMemory = None,
+                 memory_size=None):
+        self.area_type = area_type
+        self.symbols = {}
 
-    def get_handle_by_name(self, name):
-        return self.symbols[name]
+        if memory is not None:
+            self.memory = memory
+        elif memory_size is not None:
+            self.memory = PlcMemory(memory_size)
+        else:
+            raise ValueError('Must specify either memory or memory_size')
+
+    def add_symbol(self, tmc_symbol):
+        info = tmc_symbol.info
+        bit_offset = int(info['bit_offs'])
+        if (bit_offset % 8) != 0:
+            logger.warning('Symbol not byte-aligned?')
+            return
+
+        offset = bit_offset // 8
+        type_name = info['type']
+        if type_name.startswith('STRING') and '(' in type_name:
+            array_length = int(type_name.split('(')[1].rstrip(')'))
+            type_name = 'STRING'
+        else:
+            array_length = getattr(tmc_symbol.array_info, 'elements', 1)
+
+        try:
+            data_type = TmcTypes[type_name].value
+        except KeyError:
+            logger.warning('Complex types not yet supported: %s', info['type'])
+            # assert tmc_symbol.data_type.is_complex_type
+            return
+
+        symbol = self.symbols[tmc_symbol.name] = Symbol(
+            tmc_symbol.name,
+            offset=offset,
+            data_type=data_type,
+            array_length=array_length,
+            memory=self.memory
+        )
+        return symbol
+
+    def __repr__(self):
+        return f'<DataArea {self.area_type}>'
 
 
-class TmcTypes(enum.IntEnum):
+class TmcTypes(enum.Enum):
     BOOL = AdsDataType.BIT
-    BYTE = AdsDataType.BYTE
-    SINT =  AdsDataType.INT8
+    BYTE = AdsDataType.UINT8
+    SINT = AdsDataType.INT8
     USINT = AdsDataType.UINT8
 
     WORD = AdsDataType.UINT16
     INT = AdsDataType.INT16
     UINT = AdsDataType.UINT16
 
-    DWORD =AdsDataType.UINT32
+    DWORD = AdsDataType.UINT32
     DINT = AdsDataType.INT32
     UDINT = AdsDataType.UINT32
 
@@ -104,7 +140,33 @@ class TmcTypes(enum.IntEnum):
     STRING = AdsDataType.STRING
 
 
-class TmcDatabase(SymbolDatabase):
+class DataAreaIndexGroup(enum.Enum):
+    # <AreaNo AreaType="Internal" CreateSymbols="true">3</AreaNo>
+    # e.g., Global_Version.stLibVersion_Tc2_System
+    Internal = constants.AdsIndexGroup.PLC_DATA_AREA  # 0x4040
+
+    # <AreaNo AreaType="InputDst" CreateSymbols="true">0</AreaNo>
+    # read/write input byte(s)
+    InputDst = constants.AdsIndexGroup.IOIMAGE_RWIB  # 0xF020
+
+    # <AreaNo AreaType="OutputSrc" CreateSymbols="true">1</AreaNo>
+    # read/write output byte(s)
+    # e.g., Axis.PlcToNc
+    OutputSrc = constants.AdsIndexGroup.IOIMAGE_RWOB  # 0xF030
+
+    # TODO:
+    # Standard
+    # InputSrc
+    # OutputDst
+    # MArea
+    # RetainSrc
+    # RetainDst
+    # InfoData
+    # RedundancySrc
+    # RedundancyDst
+
+
+class TmcDatabase:
     def __init__(self, tmc):
         super().__init__()
 
@@ -116,18 +178,22 @@ class TmcDatabase(SymbolDatabase):
             tmc = pytmc.parser.parse(tmc)
 
         self.tmc = tmc
+        self.data_areas = []
+        self.index_groups = {}
         self._load_data_areas()
 
     def _load_data_areas(self):
-        for data_area in self.tmc.find(pytmc.parser.DataArea):
-            info = area.AreaNo[0].attributes
+        for tmc_area in self.tmc.find(pytmc.parser.DataArea):
+            info = tmc_area.AreaNo[0].attributes
             area_type = info['AreaType']
             create_symbols = info.get('CreateSymbols', 'true')
+            byte_size = int(tmc_area.ByteSize[0].text)
             if create_symbols != 'true':
                 continue
 
-            for sym in data_area.find(pytmc.parser.Symbol):
-                self._add_symbol(data_area, sym)
+            area = TmcDataArea(area_type, memory_size=byte_size)
+            self.data_areas.append(area)
+            self.index_groups[DataAreaIndexGroup[area_type]] = area
 
-    def _add_symbol(self, data_area, symbol):
-        print('add symbol', symbol.info)
+            for sym in tmc_area.find(pytmc.parser.Symbol):
+                area.add_symbol(sym)

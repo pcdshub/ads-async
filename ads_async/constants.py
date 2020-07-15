@@ -133,6 +133,7 @@ class AdsIndexGroup(enum.IntEnum):
     IOIMAGE_RWIX = 0xF021
     # read input size (in byte)
     IOIMAGE_RISIZE = 0xF025
+
     # read/write output byte(s)
     IOIMAGE_RWOB = 0xF030
     # read/write output bit
