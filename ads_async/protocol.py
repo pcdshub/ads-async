@@ -117,7 +117,7 @@ class AcceptedClient:
                          AdsCommandId.READ,
                          AdsCommandId.WRITE,
                          AdsCommandId.WRITE_CONTROL}:
-            yield AsynchronousRequest(header, command)
+            yield AsynchronousRequest(header, request, self)
 
     def received_data(self, data):
         self.recv_buffer += data
@@ -129,7 +129,7 @@ class AcceptedClient:
             yield item
 
     def response_to_wire(
-            self, item: structs._AdsStructBase,
+            self, *items: structs._AdsStructBase,
             request_header: structs.AoEHeader,
             ads_error: constants.AdsError = constants.AdsError.NOERR
             ) -> bytearray:
@@ -137,12 +137,15 @@ class AcceptedClient:
 
         bytes_to_send = bytearray()
 
-        item_length = (ctypes.sizeof(item) +
-                       ctypes.sizeof(structs.AoEResponseHeader))
+        item_length = (
+            sum(ctypes.sizeof(item) for item in items) +
+            ctypes.sizeof(structs.AoEResponseHeader)
+        )
+
         aoe_header = structs.AoEHeader.create_response(
             target=request_header.source,
             source=request_header.target,
-            command_id=item._command_id,
+            command_id=request_header.command_id,
             invoke_id=request_id,
             length=item_length,
         )
@@ -154,14 +157,17 @@ class AcceptedClient:
         bytes_to_send = bytearray(ams_tcp_header)
         bytes_to_send.extend(aoe_header)
         bytes_to_send.extend(structs.AoEResponseHeader(ads_error))
-        bytes_to_send.extend(item)
+        for item in items:
+            bytes_to_send.extend(item)
 
         extra = {
             'direction': '--->>>',
             'sequence': request_id,
             'bytesize': len(bytes_to_send),
         }
-        self.log.debug('%s', item, extra=extra)
+        for idx, item in enumerate(items, 1):
+            extra['counter'] = (idx, len(items) + 1)
+            self.log.debug('%s', item, extra=extra)
 
         return bytes_to_send
 
@@ -170,11 +176,13 @@ class AsynchronousRequest:
     header: structs.AoEHeader
     command: structs._AdsStructBase
     invoke_id: int
+    requester: object
 
-    def __init__(self, header, command):
+    def __init__(self, header, command, requester):
         self.invoke_id = header.invoke_id
         self.header = header
         self.command = command
+        self.requester = requester
 
     def __repr__(self):
         return (f'<{self.__class__.__name__} invoke_id={self.invoke_id} '
@@ -218,3 +226,7 @@ class Server:
     @property
     def name(self) -> str:
         return self._name
+
+
+def serialize_data(data_type: constants.AdsDataType, data: typing.Any):
+    ...

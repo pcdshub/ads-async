@@ -24,9 +24,9 @@ class AsyncioAcceptedClient:
         self.writer = writer
         self.log = client.log
 
-    async def send_response(self, request_header, item):
+    async def send_response(self, request_header, *items):
         bytes_to_send = self.client.response_to_wire(
-            item, request_header=request_header)
+            *items, request_header=request_header)
         self.writer.write(bytes_to_send)
         await self.writer.drain()
 
@@ -43,6 +43,7 @@ class AsyncioAcceptedClient:
     async def _handle_command(self, header: structs.AoEHeader, item):
         for response in self.client.handle_command(header, item):
             if isinstance(response, protocol.AsynchronousRequest):
+                response.requester = self
                 await self.server.queue_async_request(response)
             else:
                 await self.send_response(header, response)
@@ -97,6 +98,22 @@ class AsyncioServer:
         while self._running:
             request = await self._queue.async_get()
             self.log.debug('Handling %s', request)
+            client = request.requester  # type: AsyncioAcceptedClient
+
+            index_group = request.command.index_group
+            if index_group == constants.AdsIndexGroup.SYM_HNDBYNAME:
+                await client.send_response(
+                    request.header,
+                    structs.AoEHandleResponse(123),
+                )
+            elif index_group == constants.AdsIndexGroup.SYM_INFOBYNAMEEX:
+                import ctypes
+                sym = structs.AdsSymbolEntry()
+                await client.send_response(
+                    request.header,
+                    structs.AoEReadResponseHeader(ctypes.sizeof(sym)),
+                    sym,
+                )
             # self._tasks.create()
 
     async def serve_forever(self):

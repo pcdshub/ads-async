@@ -408,7 +408,8 @@ class AdsSymbolEntry(_AdsStructBase):
     flags = _create_enum_property('_flags', constants.AdsSymbolFlag)
     data_type = _create_enum_property('_data_type', constants.AdsDataType)
     index_group = _create_enum_property('_index_group',
-                                        constants.AdsIndexGroup)
+                                        constants.AdsIndexGroup,
+                                        strict=False)
     _dict_mapping = {'_flags': 'flags',
                      '_data_type': 'data_type',
                      '_index_group': 'index_group'
@@ -449,7 +450,8 @@ class AdsReadWriteRequest(_AdsStructBase):
         return struct
 
     index_group = _create_enum_property('_index_group',
-                                        constants.AdsIndexGroup)
+                                        constants.AdsIndexGroup,
+                                        strict=False)
     _dict_mapping = {'_data_start': 'data',
                      '_index_group': 'index_group'}
 
@@ -470,7 +472,8 @@ class AdsSymbolInfoByName(_AdsStructBase):
     ]
 
     index_group = _create_enum_property('_index_group',
-                                        constants.AdsIndexGroup)
+                                        constants.AdsIndexGroup,
+                                        strict=False)
     _dict_mapping = {'_index_group': 'index_group'}
 
 
@@ -645,8 +648,18 @@ class AoEResponseHeader(_AdsStructBase):
     ]
 
 
-class AoEReadResponseHeader(AoEResponseHeader):
+class AoEReadResponseHeader(_AdsStructBase):
     _fields_ = [
-        # Inherits 'result' from AoEResponseHeader.
         ('read_length', ctypes.c_uint32),
     ]
+
+
+class AoEHandleResponse(_AdsStructBase):
+    _fields_ = [
+        ('length', ctypes.c_uint32),
+        ('handle', ctypes.c_uint32),
+    ]
+
+    def __init__(self, handle: int):
+        super().__init__(ctypes.sizeof(ctypes.c_uint32),
+                         handle)
