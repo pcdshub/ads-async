@@ -149,6 +149,10 @@ class AdsIndexGroup(enum.IntEnum):
     # state, name, etc...
     DEVICE_DATA = 0xF100
 
+    # https://infosys.beckhoff.com/english.php?content=../content/1033/tcmodbussrvce/html/TcModbusSrv_Mapping.htm&id=  # noqa
+    PLC_MEMORY_AREA = 0x4020
+    PLC_DATA_AREA = 0x4040
+
 
 ADSIOFFS_DEVDATA_ADSSTATE = 0x0000      # ads state of device
 ADSIOFFS_DEVDATA_DEVSTATE = 0x0002      # device state
