@@ -727,22 +727,32 @@ class AdsWriteControlRequest(_AdsStructBase):
 
 @use_for_request(constants.AdsCommandId.ADD_DEVICE_NOTIFICATION)
 class AdsAddDeviceNotificationRequest(_AdsStructBase):
-    group: int
-    offset: int
+    _index_group: int
+    index_group: constants.AdsIndexGroup
+    index_offset: int
     length: int
     mode: int
     max_delay: int
     cycle_time: (ctypes.c_ubyte * 16)
 
     _fields_ = [
-        ('group', ctypes.c_uint32),
-        ('offset', ctypes.c_uint32),
+        ('_index_group', ctypes.c_uint32),
+        ('index_offset', ctypes.c_uint32),
         ('length', ctypes.c_uint32),
         ('mode', ctypes.c_uint32),
         ('max_delay', ctypes.c_uint32),
         ('cycle_time', ctypes.c_uint32),
         ('reserved', ctypes.c_ubyte * 16),
     ]
+
+    index_group = _create_enum_property('_index_group',
+                                        constants.AdsIndexGroup,
+                                        strict=False)
+    _dict_mapping = {'_index_group': 'index_group'}
+
+    @property
+    def handle(self) -> int:
+        return self.index_offset
 
 
 @use_for_request(constants.AdsCommandId.DEL_DEVICE_NOTIFICATION)
@@ -854,4 +864,18 @@ class AoEHandleResponse(AoEResponseHeader):
                  ):
         super().__init__(result)
         self.length = ctypes.sizeof(ctypes.c_uint32)
+        self.handle = handle
+
+
+class AoENotificationHandleResponse(AoEResponseHeader):
+    _fields_ = [
+        # Inherits 'result' from AoEResponseHeader
+        ('handle', ctypes.c_uint32),
+    ]
+
+    def __init__(self, *,
+                 result: constants.AdsError = constants.AdsError.NOERR,
+                 handle: int,
+                 ):
+        super().__init__(result)
         self.handle = handle

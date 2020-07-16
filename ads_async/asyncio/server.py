@@ -60,6 +60,12 @@ class AsyncioAcceptedClient:
                 code=constants.AdsError.DEVICE_ERROR,  # TODO
                 reason=str(ex))
 
+        if response is None:
+            response = protocol.ErrorResponse(
+                code=constants.AdsError.DEVICE_ERROR,  # TODO
+                reason='unhandled codepath')
+            logger.error('handle_command returned None: %s %s', header, item)
+
         if isinstance(response, protocol.AsynchronousResponse):
             response.requester = self
             await self._queue.async_put(response)

@@ -109,6 +109,15 @@ def response_to_wire(
     return headers + list(items), bytes_to_send
 
 
+class Notification:
+    handle: int
+    symbol: Symbol
+
+    def __init__(self, handle: int, symbol: Symbol):
+        self.handle = handle
+        self.symbol = symbol
+
+
 class AcceptedClient:
     # Client only from perspective of server, for now
 
@@ -123,6 +132,11 @@ class AcceptedClient:
             initial_value=100,
             max_count=2 ** 32,  # handles are uint32
             dont_clash_with=self.handle_to_symbol,
+        )
+        self._notification_counter = utils.ThreadsafeCounter(
+            initial_value=100,
+            max_count=2 ** 32,  # handles are uint32
+            dont_clash_with=self.handle_to_notification,
         )
 
         tags = {
@@ -159,12 +173,21 @@ class AcceptedClient:
     def _handle_add_notification_request(
             self, header: structs.AoEHeader,
             request: structs.AdsAddDeviceNotificationRequest):
-        self.handle_to_notification.pop(request.handle)
+
+        if request.index_group == AdsIndexGroup.SYM_VALBYHND:
+            symbol = self._get_symbol_by_request_handle(request)
+            handle = self._handle_counter()
+            self.handle_to_notification[handle] = Notification(
+                symbol=symbol,
+                handle=handle,
+            )
+            return [structs.AoENotificationHandleResponse(handle=handle)]
 
     def _handle_delete_notification_request(
             self, header: structs.AoEHeader,
             request: structs.AdsDeleteDeviceNotificationRequest):
         self.handle_to_notification.pop(request.handle)
+        return [structs.AoEResponseHeader(AdsError.NOERR)]
 
     def _handle_write_control(
             self, header: structs.AoEHeader,
