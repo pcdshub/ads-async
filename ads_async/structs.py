@@ -111,6 +111,11 @@ class _AdsStructBase(ctypes.LittleEndianStructure):
 
         return new_struct
 
+    @classmethod
+    def command_id(cls) -> constants.AdsCommandId:
+        """The command ID associated with this request/response."""
+        return cls._command_id
+
 
 def _create_enum_property(field_name: str,
                           enum_cls: enum.Enum,
