@@ -499,6 +499,48 @@ class AdsSymbolEntry(_AdsStructBase):
         return packed
 
 
+@use_for_request(constants.AdsCommandId.WRITE)
+class AdsWriteRequest(_AdsStructBase):
+    """
+    """
+    index_group: constants.AdsIndexGroup
+    index_offset: int
+    write_length: int
+    _data_start: ctypes.c_ubyte * 0
+    data: typing.Any = None
+
+    _fields_ = [
+        ('_index_group', ctypes.c_uint32),
+        ('index_offset', ctypes.c_uint32),
+        ('write_length', ctypes.c_uint32),
+        ('_data_start', ctypes.c_ubyte * 0),
+    ]
+
+    @classmethod
+    def from_buffer_extended(cls, buf):
+        struct = cls.from_buffer(buf)
+        data_start = cls._data_start.offset
+        struct.data = bytearray(
+            buf[data_start:data_start + struct.write_length])
+        return struct
+
+    @property
+    def data_as_symbol_name(self) -> str:
+        """Data payload decoded as a symbol name."""
+        if self.data is None:
+            # from_buffer_extended wasn't called?
+            return None  # pragma: no cover
+
+        name = self.data.decode(constants.ADS_ASYNC_STRING_ENCODING)
+        return name.split('\x00')[0]
+
+    index_group = _create_enum_property('_index_group',
+                                        constants.AdsIndexGroup,
+                                        strict=False)
+    _dict_mapping = {'_data_start': 'data',
+                     '_index_group': 'index_group'}
+
+
 @use_for_request(constants.AdsCommandId.READ_WRITE)
 class AdsReadWriteRequest(_AdsStructBase):
     """
@@ -549,8 +591,8 @@ class AdsReadWriteRequest(_AdsStructBase):
                      '_index_group': 'index_group'}
 
 
-class AdsSymbolInfoByName(_AdsStructBase):
-    """Used to provide ADS symbol information for ADS SUM commands."""
+@use_for_request(constants.AdsCommandId.READ)
+class AdsReadRequest(_AdsStructBase):
     # indexGroup of symbol: input, output etc.
     index_group: constants.AdsIndexGroup
     index_offset: int
@@ -568,6 +610,10 @@ class AdsSymbolInfoByName(_AdsStructBase):
                                         constants.AdsIndexGroup,
                                         strict=False)
     _dict_mapping = {'_index_group': 'index_group'}
+
+    @property
+    def handle(self) -> int:
+        return self.index_offset
 
 
 class AmsTcpHeader(_AdsStructBase):

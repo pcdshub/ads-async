@@ -119,6 +119,7 @@ class AcceptedClient:
         self.handle_to_symbol = {}
         # self.symbol_to_handle = {}
         self._handle_counter = utils.ThreadsafeCounter(
+            initial_value=100,
             max_count=2 ** 32,  # handles are uint32
             dont_clash_with=self.handle_to_symbol,
         )
@@ -138,6 +139,25 @@ class AcceptedClient:
 
     def disconnected(self):
         ...
+
+    def _handle_write(self, header: structs.AoEHeader,
+                      request: structs.AdsWriteRequest):
+        if request.index_group == constants.AdsIndexGroup.SYM_RELEASEHND:
+            handle = request.data  # <-- decode
+            print('handle', handle)
+            return [structs.AoEResponseHeader()]
+
+        print('unhandled write', request.index_group)
+
+    def _handle_read(self, header: structs.AoEHeader,
+                     request: structs.AdsReadRequest):
+        if request.index_group == constants.AdsIndexGroup.SYM_VALBYHND:
+            symbol = self.handle_to_symbol[request.handle]
+            data = bytes(symbol.read())
+            return [
+                structs.AoEReadResponseHeader(read_length=len(data)),
+                data,
+            ]
 
     def _handle_read_write(self, header: structs.AoEHeader,
                            request: structs.AdsReadWriteRequest):
@@ -200,13 +220,17 @@ class AcceptedClient:
                     ]
         if command == AdsCommandId.READ_WRITE:
             return self._handle_read_write(header, request)
+        if command == AdsCommandId.READ:
+            return self._handle_read(header, request)
+        if command == AdsCommandId.WRITE:
+            return self._handle_write(header, request)
         if command in {AdsCommandId.ADD_DEVICE_NOTIFICATION,
                        AdsCommandId.DEL_DEVICE_NOTIFICATION,
                        AdsCommandId.DEVICE_NOTIFICATION,
-                       AdsCommandId.READ,
-                       AdsCommandId.WRITE,
                        AdsCommandId.WRITE_CONTROL}:
             return AsynchronousResponse(header, request, self)
+
+        raise RuntimeError('Unknown command')  # TODO handle in caller
 
     def received_data(self, data):
         self.recv_buffer += data
