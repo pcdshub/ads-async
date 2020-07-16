@@ -162,7 +162,7 @@ class AcceptedClient:
     def _handle_read_write(self, header: structs.AoEHeader,
                            request: structs.AdsReadWriteRequest):
         def get_symbol_by_name() -> Symbol:
-            symbol_name = request.data_as_symbol_name
+            symbol_name = structs.byte_string_to_string(request.data)
             return self.server.database.get_symbol_by_name(symbol_name)
 
         if request.index_group == constants.AdsIndexGroup.SYM_HNDBYNAME:

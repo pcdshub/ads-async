@@ -44,7 +44,8 @@ def string_to_byte_string(s: str) -> bytes:
 
 
 def byte_string_to_string(s: bytes) -> str:
-    return str(s, constants.ADS_ASYNC_STRING_ENCODING)
+    value = str(s, constants.ADS_ASYNC_STRING_ENCODING)
+    return value.split('\x00')[0]
 
 
 class _AdsStructBase(ctypes.LittleEndianStructure):
@@ -564,23 +565,9 @@ class AdsWriteRequest(_AdsStructBase):
         ('_data_start', ctypes.c_ubyte * 0),
     ]
 
-    @classmethod
-    def from_buffer_extended(cls, buf):
-        struct = cls.from_buffer(buf)
-        data_start = cls._data_start.offset
-        struct.data = bytearray(
-            buf[data_start:data_start + struct.write_length])
-        return struct
-
-    @property
-    def data_as_symbol_name(self) -> str:
-        """Data payload decoded as a symbol name."""
-        if self.data is None:
-            # from_buffer_extended wasn't called?
-            return None  # pragma: no cover
-
-        name = self.data.decode(constants.ADS_ASYNC_STRING_ENCODING)
-        return name.split('\x00')[0]
+    _payload_fields = [
+        ('data', '{self.write_length}s', 1, bytes, bytes),
+    ]
 
     index_group = _create_enum_property('_index_group',
                                         constants.AdsIndexGroup,
@@ -614,23 +601,9 @@ class AdsReadWriteRequest(_AdsStructBase):
         ('_data_start', ctypes.c_ubyte * 0),
     ]
 
-    @classmethod
-    def from_buffer_extended(cls, buf):
-        struct = cls.from_buffer(buf)
-        data_start = AdsReadWriteRequest._data_start.offset
-        struct.data = bytearray(
-            buf[data_start:data_start + struct.write_length])
-        return struct
-
-    @property
-    def data_as_symbol_name(self) -> str:
-        """Data payload decoded as a symbol name."""
-        if self.data is None:
-            # from_buffer_extended wasn't called?
-            return None  # pragma: no cover
-
-        name = self.data.decode(constants.ADS_ASYNC_STRING_ENCODING)
-        return name.split('\x00')[0]
+    _payload_fields = [
+        ('data', '{self.write_length}s', 1, bytes, bytes),
+    ]
 
     index_group = _create_enum_property('_index_group',
                                         constants.AdsIndexGroup,
