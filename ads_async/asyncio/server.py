@@ -50,8 +50,12 @@ class AsyncioAcceptedClient:
     async def _handle_command(self, header: structs.AoEHeader, item):
         try:
             response = self.client.handle_command(header, item)
+        except protocol.ErrorResponse as ex:
+            logger.debug('handle_command failed with caught error',
+                         exc_info=ex)
+            response = ex
         except Exception as ex:
-            logger.exception('handle_command failed')
+            logger.exception('handle_command failed with unknown error')
             response = protocol.ErrorResponse(
                 code=constants.AdsError.DEVICE_ERROR,  # TODO
                 reason=str(ex))

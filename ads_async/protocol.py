@@ -4,7 +4,7 @@ import struct
 import typing
 
 from . import constants, log, structs, utils
-from .constants import AdsCommandId, AdsError
+from .constants import AdsCommandId, AdsError, AdsIndexGroup
 from .symbols import Database, Symbol
 
 module_logger = logging.getLogger(__name__)
@@ -141,15 +141,35 @@ class AcceptedClient:
     def disconnected(self):
         ...
 
+    def _get_symbol_by_request_name(self, request) -> Symbol:
+        symbol_name = structs.byte_string_to_string(request.data)
+        try:
+            return self.server.database.get_symbol_by_name(symbol_name)
+        except KeyError as ex:
+            raise ErrorResponse(code=AdsError.DEVICE_SYMBOLNOTFOUND,
+                                reason=f'{ex} not in database') from None
+
+    def _get_symbol_by_request_handle(self, request) -> Symbol:
+        try:
+            return self.handle_to_symbol[request.handle]
+        except KeyError as ex:
+            raise ErrorResponse(code=AdsError.CLIENT_INVALIDPARM,  # TODO?
+                                reason=f'{ex} bad handle') from None
+
     def _handle_write(self, header: structs.AoEHeader,
                       request: structs.AdsWriteRequest):
-        if request.index_group == constants.AdsIndexGroup.SYM_RELEASEHND:
+        if request.index_group == AdsIndexGroup.SYM_RELEASEHND:
             handle = request.handle
             self.handle_to_symbol.pop(handle, None)
             return [structs.AoEResponseHeader()]
 
-        if request.index_group == constants.AdsIndexGroup.SYM_VALBYHND:
-            symbol = self.handle_to_symbol[request.handle]
+        if request.index_group in (AdsIndexGroup.SYM_VALBYHND,
+                                   AdsIndexGroup.SYM_VALBYNAME):
+            if request.index_group == AdsIndexGroup.SYM_VALBYHND:
+                symbol = self._get_symbol_by_request_handle(request)
+            else:
+                symbol = self._get_symbol_by_request_name(request)
+
             old_value = repr(symbol.value)
             symbol.write(request.data)
             self.log.debug('Writing symbol %s old value: %s new value: %s',
@@ -160,8 +180,13 @@ class AcceptedClient:
 
     def _handle_read(self, header: structs.AoEHeader,
                      request: structs.AdsReadRequest):
-        if request.index_group == constants.AdsIndexGroup.SYM_VALBYHND:
-            symbol = self.handle_to_symbol[request.handle]
+        if request.index_group in (AdsIndexGroup.SYM_VALBYHND,
+                                   AdsIndexGroup.SYM_VALBYNAME):
+            if request.index_group == AdsIndexGroup.SYM_VALBYHND:
+                symbol = self._get_symbol_by_request_handle(request)
+            else:
+                symbol = self._get_symbol_by_request_name(request)
+
             data = bytes(symbol.read())
             return [
                 structs.AoEReadResponseHeader(read_length=len(data)),
@@ -170,28 +195,15 @@ class AcceptedClient:
 
     def _handle_read_write(self, header: structs.AoEHeader,
                            request: structs.AdsReadWriteRequest):
-        def get_symbol_by_name() -> Symbol:
-            symbol_name = structs.byte_string_to_string(request.data)
-            return self.server.database.get_symbol_by_name(symbol_name)
-
-        if request.index_group == constants.AdsIndexGroup.SYM_HNDBYNAME:
-            try:
-                symbol = get_symbol_by_name()
-            except KeyError as ex:
-                return ErrorResponse(code=AdsError.DEVICE_SYMBOLNOTFOUND,
-                                     reason=f'{ex} not in database')
-
+        if request.index_group == AdsIndexGroup.SYM_HNDBYNAME:
+            symbol = self._get_symbol_by_request_name(request)
             handle = self._handle_counter()
             self.handle_to_symbol[handle] = symbol
             return [structs.AoEHandleResponse(result=AdsError.NOERR,
                                               handle=handle)]
-        elif request.index_group == constants.AdsIndexGroup.SYM_INFOBYNAMEEX:
-            try:
-                symbol = get_symbol_by_name()
-            except KeyError as ex:
-                return ErrorResponse(code=AdsError.DEVICE_SYMBOLNOTFOUND,
-                                     reason=f'{ex} not in database')
 
+        elif request.index_group == AdsIndexGroup.SYM_INFOBYNAMEEX:
+            symbol = self._get_symbol_by_request_name(request)
             symbol_entry = structs.AdsSymbolEntry(
                 index_group=symbol.data_area.index_group.value,  # TODO
                 index_offset=symbol.offset,
@@ -275,7 +287,7 @@ class AcceptedClient:
         return bytes_to_send
 
 
-class ErrorResponse:
+class ErrorResponse(Exception):
     code: AdsError
     reason: str
 
