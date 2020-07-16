@@ -14,7 +14,7 @@ env:
     - PYTHON_LINT_OPTIONS="ads_async"
 
     # The name of the conda package
-    - CONDA_PACKAGE="ads-async"
+    - CONDA_PACKAGE="ads_async"
     # The folder containing the conda recipe (meta.yaml)
     - CONDA_RECIPE_FOLDER="conda-recipe"
 
