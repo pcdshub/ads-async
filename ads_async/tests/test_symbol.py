@@ -15,6 +15,7 @@ def memory():
 
 def test_symbol(memory):
     sym = ads_async.symbols.Symbol(
+        data_area=None,
         name='test',
         offset=0,
         data_type=ads_async.constants.AdsDataType.INT32,
