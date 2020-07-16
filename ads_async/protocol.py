@@ -159,9 +159,11 @@ class AcceptedClient:
         symbol_name = structs.byte_string_to_string(request.data)
         try:
             return self.server.database.get_symbol_by_name(symbol_name)
-        except KeyError as ex:
-            raise ErrorResponse(code=AdsError.DEVICE_SYMBOLNOTFOUND,
-                                reason=f'{ex} not in database') from None
+        except KeyError:
+            raise ErrorResponse(
+                code=AdsError.DEVICE_SYMBOLNOTFOUND,
+                reason=f'{symbol_name!r} not in database'
+            ) from None
 
     def _get_symbol_by_request_handle(self, request) -> Symbol:
         try:
@@ -225,11 +227,7 @@ class AcceptedClient:
             else:
                 symbol = self._get_symbol_by_request_name(request)
 
-            data = bytes(symbol.read())
-            return [
-                structs.AoEReadResponseHeader(read_length=len(data)),
-                data,
-            ]
+            return [structs.AoEReadResponse(data=symbol.read())]
 
     def _handle_read_write(self, header: structs.AoEHeader,
                            request: structs.AdsReadWriteRequest):
@@ -259,7 +257,7 @@ class AcceptedClient:
                 symbol_entry
             ]
 
-        return AsynchronousResponse(header, request, self)
+        # return AsynchronousResponse(header, request, self)
 
     def handle_command(self, header: structs.AoEHeader,
                        request: typing.Optional[structs._AdsStructBase]):
@@ -329,12 +327,12 @@ class ErrorResponse(Exception):
     code: AdsError
     reason: str
 
-    def __init__(self, code: AdsError, reason: str = ''):
+    def __init__(self, reason: str, code: AdsError):
+        super().__init__(reason)
         self.code = code
-        self.reason = reason
 
     def __repr__(self):
-        return f'<ErrorResponse {self.code} ({self.reason})>'
+        return f'<ErrorResponse {self.code} ({self})>'
 
 
 class AsynchronousResponse:

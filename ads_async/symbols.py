@@ -164,6 +164,9 @@ class TmcTypes(enum.Enum):
 
     ENUM = AdsDataType.UINT32
 
+    LINT = AdsDataType.INT64
+    ULINT = AdsDataType.UINT64
+
     REAL = AdsDataType.REAL32
     LREAL = AdsDataType.REAL64
 

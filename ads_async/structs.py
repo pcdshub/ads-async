@@ -319,6 +319,11 @@ class AdsDeviceInfo(AdsVersion):
         self.build = build
         self.name = name
 
+    @property
+    def version_tuple(self) -> typing.Tuple[int, int, int]:
+        """The version tuple: (Version, Revision, Build)"""
+        return (self.version, self.revision, self.build)
+
 
 class AdsNotificationAttrib(_AdsStructBase):
     """
@@ -572,6 +577,18 @@ class AdsWriteRequest(_AdsStructBase):
     _dict_mapping = {'_data_start': 'data',
                      '_index_group': 'index_group'}
 
+    def __init__(self, index_group: constants.AdsIndexGroup,
+                 index_offset: int, data: typing.Any = None):
+        if data is not None:
+            data = bytes(data)
+            length = len(data)
+        else:
+            data = None
+            length = 0
+
+        super().__init__(index_group, index_offset, length)
+        self.data = data
+
     @property
     def handle(self) -> int:
         return self.index_offset
@@ -611,6 +628,15 @@ class AdsReadWriteRequest(_AdsStructBase):
                                         strict=False)
     _dict_mapping = {'_data_start': 'data',
                      '_index_group': 'index_group'}
+
+    @classmethod
+    def create_handle_by_name_request(cls, name: str) -> 'AdsReadWriteRequest':
+        data = string_to_byte_string(name) + b'\x00'
+        request = cls(constants.AdsIndexGroup.SYM_HNDBYNAME,
+                      0, ctypes.sizeof(ctypes.c_uint32),
+                      len(data))
+        request.data = data
+        return request
 
 
 @use_for_request(constants.AdsCommandId.READ)
@@ -842,18 +868,32 @@ class AoEResponseHeader(_AdsStructBase):
     _dict_mapping = {'_result': 'result'}
 
 
-class AoEReadResponseHeader(AoEResponseHeader):
+class AoEReadResponse(AoEResponseHeader):
     _fields_ = [
         # Inherits 'result' from AoEResponseHeader
         ('read_length', ctypes.c_uint32),
+        ('_data_start', ctypes.c_uint8 * 0),
     ]
+
+    _payload_fields = [
+        ('data', '{self.read_length}s', 1, bytes, bytes),
+    ]
+
+    _dict_mapping = {'_data_start': 'data'}
 
     def __init__(self, *,
                  result: constants.AdsError = constants.AdsError.NOERR,
-                 read_length: int,
+                 length: int = 0,
+                 data: typing.Any = None,
                  ):
-        super().__init__(result)
-        self.read_length = read_length
+        if data is not None:
+            data = bytes(data)
+            length = len(data)
+        else:
+            data = None
+
+        super().__init__(result, length)
+        self.data = data
 
 
 class AoEHandleResponse(AoEResponseHeader):
