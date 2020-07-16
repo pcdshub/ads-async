@@ -1,11 +1,15 @@
+import pathlib
+
 import pytest
 
 import ads_async
 
+MODULE_PATH = pathlib.Path(__file__).parent
+
 
 @pytest.fixture(scope='module')
-def tmc_filename():
-    return 'kmono.tmc'
+def tmc_filename() -> str:
+    return MODULE_PATH / 'kmono.tmc'
 
 
 @pytest.fixture(scope='function')

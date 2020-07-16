@@ -1,5 +1,6 @@
 import ctypes
 import logging
+import pathlib
 
 import pytest
 
@@ -7,11 +8,12 @@ import ads_async
 from ads_async import constants, protocol, structs
 
 logger = logging.getLogger(__name__)
+MODULE_PATH = pathlib.Path(__file__).parent
 
 
 @pytest.fixture(scope='module')
 def tmc_filename() -> str:
-    return 'kmono.tmc'
+    return MODULE_PATH / 'kmono.tmc'
 
 
 @pytest.fixture(scope='function')
