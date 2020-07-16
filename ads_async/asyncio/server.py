@@ -27,10 +27,10 @@ class AsyncioAcceptedClient:
         self._handle_index = 0
 
     async def send_response(
-            self, *items, request_header, response_header=None,
+            self, *items, request_header,
             ads_error: constants.AdsError = constants.AdsError.NOERR):
         bytes_to_send = self.client.response_to_wire(
-            *items, response_header=response_header,
+            *items,
             request_header=request_header,
             ads_error=ads_error)
         self.writer.write(bytes_to_send)
@@ -48,21 +48,18 @@ class AsyncioAcceptedClient:
                 await self._handle_command(header, item)
 
     async def _handle_command(self, header: structs.AoEHeader, item):
-        for response in self.client.handle_command(header, item):
-            if isinstance(response, protocol.AsynchronousResponse):
-                response.requester = self
-                await self._queue.async_put(response)
-            elif isinstance(response, protocol.ErrorResponse):
-                self.log.error('Error response: %r', response)
-                await self.send_response(request_header=header,
-                                         ads_error=response.code,
-                                         )
-            elif isinstance(response, structs.AoEResponseHeader):
-                # TODO: confusing how this is structured
-                await self.send_response(request_header=header,
-                                         response_header=response)
-            else:
-                await self.send_response(response, request_header=header)
+        response = self.client.handle_command(header, item)
+
+        if isinstance(response, protocol.AsynchronousResponse):
+            response.requester = self
+            await self._queue.async_put(response)
+        elif isinstance(response, protocol.ErrorResponse):
+            self.log.error('Error response: %r', response)
+            await self.send_response(request_header=header,
+                                     ads_error=response.code,
+                                     )
+        else:
+            await self.send_response(*response, request_header=header)
 
     async def _request_queue_loop(self):
         server = self.server

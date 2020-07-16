@@ -417,7 +417,8 @@ class AdsSymbolEntry(_AdsStructBase):
                                         strict=False)
     _dict_mapping = {'_flags': 'flags',
                      '_data_type': 'data_type',
-                     '_index_group': 'index_group'
+                     '_index_group': 'index_group',
+                     '_data_start': '_payload',
                      }
 
     def __init__(self,
@@ -445,19 +446,27 @@ class AdsSymbolEntry(_AdsStructBase):
         self._update_lengths()
 
     @property
+    def _payload(self):
+        return dict(name=self.name,
+                    type_name=self.type_name,
+                    comment=self.comment)
+
+    @property
     def _payload_length(self):
         return sum(
             (self.name_length,
              self.type_length,
              self.comment_length,
              3,  # 3 null terminators not included in length
-         ))
+             )
+        )
 
     def _update_lengths(self):
         self.name_length = len(self.name)
         self.type_length = len(self.type_name)
         self.comment_length = len(self.comment)
-        self.entry_length = ctypes.sizeof(AdsSymbolEntry) + self._payload_length
+        self.entry_length = (ctypes.sizeof(AdsSymbolEntry) +
+                             self._payload_length)
 
     @classmethod
     def from_buffer_extended(cls, buf):
@@ -480,14 +489,14 @@ class AdsSymbolEntry(_AdsStructBase):
                              constants.ADS_ASYNC_STRING_ENCODING)
         return struct
 
-    def __bytes__(self):
-        # TODO hack for now (?)
+    def serialize(self) -> bytearray:
         self._update_lengths()
         packed = bytearray(self)
-        packed.extend([s.encode(constants.ADS_ASYNC_STRING_ENCODING) + b'\x00'
-                       for s in (self.name, self.type_name, self.comment)
-                       ])
-        return bytes(packed)
+
+        for s in (self.name, self.type_name, self.comment):
+            packed.extend(
+                s.encode(constants.ADS_ASYNC_STRING_ENCODING) + b'\x00')
+        return packed
 
 
 @use_for_request(constants.AdsCommandId.READ_WRITE)
@@ -745,7 +754,8 @@ class AoEReadResponseHeader(AoEResponseHeader):
                  result: constants.AdsError = constants.AdsError.NOERR,
                  read_length: int,
                  ):
-        super().__init__(result, read_length)
+        super().__init__(result)
+        self.read_length = read_length
 
 
 class AoEHandleResponse(AoEResponseHeader):
@@ -759,6 +769,6 @@ class AoEHandleResponse(AoEResponseHeader):
                  result: constants.AdsError = constants.AdsError.NOERR,
                  handle: int,
                  ):
-        super().__init__(result,
-                         ctypes.sizeof(ctypes.c_uint32),
-                         handle)
+        super().__init__(result)
+        self.length = ctypes.sizeof(ctypes.c_uint32)
+        self.handle = handle

@@ -3,8 +3,8 @@ import logging
 import typing
 
 from . import constants, log, structs, utils
-from .constants import AdsCommandId
-from .symbols import Database
+from .constants import AdsCommandId, AdsError
+from .symbols import Database, Symbol
 
 module_logger = logging.getLogger(__name__)
 
@@ -78,17 +78,18 @@ def from_wire(buf, *, logger=module_logger,
 def response_to_wire(
         *items: structs._AdsStructBase,
         request_header: structs.AoEHeader,
-        response_header: structs.AoEResponseHeader = None,
-        ads_error: constants.AdsError = constants.AdsError.NOERR
+        ads_error: AdsError = AdsError.NOERR
         ) -> typing.Tuple[list, bytearray]:
 
-    if response_header is None:
-        response_header = structs.AoEResponseHeader(ads_error)
+    # TODO: better way around this? would like to bake it into __bytes__
+    items_serialized = [item.serialize()
+                        if hasattr(item, 'serialize')
+                        else bytes(item)
+                        for item in items]
 
-    items = [response_header] + list(items)
-    item_length = sum(ctypes.sizeof(item) for item in items)
+    item_length = sum(len(item) for item in items_serialized)
 
-    full_frame = [
+    headers = [
         structs.AmsTcpHeader(_AOE_HEADER_LENGTH + item_length),
         structs.AoEHeader.create_response(
                 target=request_header.source,
@@ -98,14 +99,13 @@ def response_to_wire(
                 length=item_length,
                 error_code=ads_error,
             ),
-        *items,  # includes response header
     ]
 
-    bytes_to_send = bytearray(full_frame[0])
-    for item in full_frame[1:]:
+    bytes_to_send = bytearray()
+    for item in headers + items_serialized:
         bytes_to_send.extend(item)
 
-    return full_frame, bytes_to_send
+    return headers + list(items), bytes_to_send
 
 
 class AcceptedClient:
@@ -141,47 +141,46 @@ class AcceptedClient:
 
     def _handle_read_write(self, header: structs.AoEHeader,
                            request: structs.AdsReadWriteRequest):
-        def get_symbol_by_name():
+        def get_symbol_by_name() -> Symbol:
             symbol_name = request.data_as_symbol_name
             return self.server.database.get_symbol_by_name(symbol_name)
 
         if request.index_group == constants.AdsIndexGroup.SYM_HNDBYNAME:
             try:
                 symbol = get_symbol_by_name()
-            except KeyError:
-                return ErrorResponse(
-                    code=constants.AdsError.DEVICE_SYMBOLNOTFOUND,
-                    reason=f'{symbol_name} not in database'
-                )
+            except KeyError as ex:
+                return ErrorResponse(code=AdsError.DEVICE_SYMBOLNOTFOUND,
+                                     reason=f'{ex} not in database')
 
             handle = self._handle_counter()
             self.handle_to_symbol[handle] = symbol
-            yield structs.AoEHandleResponse(handle=handle)
-
+            return [structs.AoEHandleResponse(result=AdsError.NOERR,
+                                              handle=handle)]
         elif request.index_group == constants.AdsIndexGroup.SYM_INFOBYNAMEEX:
             try:
                 symbol = get_symbol_by_name()
-            except KeyError:
-                return ErrorResponse(
-                    code=constants.AdsError.DEVICE_SYMBOLNOTFOUND,
-                    reason=f'{symbol_name} not in database'
-                )
+            except KeyError as ex:
+                return ErrorResponse(code=AdsError.DEVICE_SYMBOLNOTFOUND,
+                                     reason=f'{ex} not in database')
 
-            entry = structs.AdsSymbolEntry(
-                sym.
+            symbol_entry = structs.AdsSymbolEntry(
+                index_group=symbol.data_area.index_group.value,  # TODO
+                index_offset=symbol.offset,
+                size=symbol.size,
+                data_type=symbol.data_type,
+                flags=0,  # TODO symbol.flags
+                name=symbol.name,
+                type_name=symbol.data_type.name,
+                comment=symbol.__doc__ or '',
             )
-            header = structs.AoEReadResponseHeader(
-                read_length=ctypes.sizeof(sym))
-            await self.send_response(
-                sym,
-                request_header=request.header,
-                response_header=header,
-            )
-            yield structs.AdsSymbolEntry(
+            # TODO: double serialization
+            return [
+                structs.AoEReadResponseHeader(
+                    read_length=len(symbol_entry.serialize())),
+                symbol_entry
+            ]
 
-            )
-        else:
-            yield AsynchronousResponse(header, request, self)
+        return AsynchronousResponse(header, request, self)
 
     def handle_command(self, header: structs.AoEHeader,
                        request: typing.Optional[structs._AdsStructBase]):
@@ -189,22 +188,25 @@ class AcceptedClient:
         self.log.debug('Handling %s', command,
                        extra={'sequence': header.invoke_id})
         if command == AdsCommandId.READ_DEVICE_INFO:
-            yield structs.AdsDeviceInfo(*self.server.version,
-                                        name=self.server.name)
-        elif command == AdsCommandId.READ_STATE:
-            yield structs.AdsReadStateResponse(
-                self.server.ads_state,
-                0  # TODO: find docs
-            )
-        elif command == AdsCommandId.READ_WRITE:
-            yield from self._handle_read_write(header, request)
-        elif command in {AdsCommandId.ADD_DEVICE_NOTIFICATION,
-                         AdsCommandId.DEL_DEVICE_NOTIFICATION,
-                         AdsCommandId.DEVICE_NOTIFICATION,
-                         AdsCommandId.READ,
-                         AdsCommandId.WRITE,
-                         AdsCommandId.WRITE_CONTROL}:
-            yield AsynchronousResponse(header, request, self)
+            return [structs.AoEResponseHeader(AdsError.NOERR),
+                    structs.AdsDeviceInfo(*self.server.version,
+                                          name=self.server.name)
+                    ]
+        if command == AdsCommandId.READ_STATE:
+            return [structs.AoEResponseHeader(AdsError.NOERR),
+                    structs.AdsReadStateResponse(self.server.ads_state,
+                                                 0  # TODO: find docs
+                                                 )
+                    ]
+        if command == AdsCommandId.READ_WRITE:
+            return self._handle_read_write(header, request)
+        if command in {AdsCommandId.ADD_DEVICE_NOTIFICATION,
+                       AdsCommandId.DEL_DEVICE_NOTIFICATION,
+                       AdsCommandId.DEVICE_NOTIFICATION,
+                       AdsCommandId.READ,
+                       AdsCommandId.WRITE,
+                       AdsCommandId.WRITE_CONTROL}:
+            return AsynchronousResponse(header, request, self)
 
     def received_data(self, data):
         self.recv_buffer += data
@@ -218,14 +220,12 @@ class AcceptedClient:
     def response_to_wire(
             self, *items: structs._AdsStructBase,
             request_header: structs.AoEHeader,
-            response_header: structs.AoEResponseHeader = None,
-            ads_error: constants.AdsError = constants.AdsError.NOERR
+            ads_error: AdsError = AdsError.NOERR
             ) -> bytearray:
 
         items, bytes_to_send = response_to_wire(
             *items,
             request_header=request_header,
-            response_header=response_header,
             ads_error=ads_error
         )
 
@@ -242,10 +242,10 @@ class AcceptedClient:
 
 
 class ErrorResponse:
-    code: constants.AdsError
+    code: AdsError
     reason: str
 
-    def __init__(self, code: constants.AdsError, reason: str = ''):
+    def __init__(self, code: AdsError, reason: str = ''):
         self.code = code
         self.reason = reason
 

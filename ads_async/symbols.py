@@ -31,14 +31,10 @@ class PlcMemory:
         self.memory[offset:offset + size] = data
 
 
-class DataArea:
-    ...
-
-
 class Symbol:
     name: str
     data_type: AdsDataType
-    data_area: DataArea
+    data_area: 'DataArea'
     ctypes_data_type: type(ctypes.c_uint8)
     size: int
     array_length: int
@@ -48,7 +44,7 @@ class Symbol:
                  offset: int,
                  data_type: constants.AdsDataType,
                  array_length: int,
-                 data_area: DataArea,
+                 data_area: 'DataArea',
                  memory: PlcMemory):
         self.name = name
         self.data_area = data_area
@@ -84,15 +80,27 @@ class Symbol:
         )
 
 
-class TmcDataArea(DataArea):
-    memory: PlcMemory
-    area_type: str
+class DataArea:
+    index_group: constants.AdsIndexGroup = None
     symbols: typing.Mapping[str, Symbol]
+    area_type: str
 
-    def __init__(self, area_type, *, memory: PlcMemory = None,
-                 memory_size=None):
+    def __init__(self, index_group: constants.AdsIndexGroup,
+                 area_type: str = ''):
+        self.index_group = index_group
         self.area_type = area_type
         self.symbols = {}
+
+
+class TmcDataArea(DataArea):
+    memory: PlcMemory
+
+    def __init__(self, index_group: constants.AdsIndexGroup,
+                 area_type: str,
+                 *,
+                 memory: PlcMemory = None,
+                 memory_size=None):
+        super().__init__(index_group, area_type)
 
         if memory is not None:
             self.memory = memory
@@ -131,6 +139,9 @@ class TmcDataArea(DataArea):
             array_length=array_length,
             memory=self.memory
         )
+        if hasattr(tmc_symbol, 'Comment'):
+            symbol.__doc__ = tmc_symbol.Comment[0].text
+
         return symbol
 
     def __repr__(self):
@@ -228,9 +239,10 @@ class TmcDatabase(Database):
             if create_symbols != 'true':
                 continue
 
-            area = TmcDataArea(area_type, memory_size=byte_size)
+            index_group = DataAreaIndexGroup[area_type]
+            area = TmcDataArea(index_group, area_type, memory_size=byte_size)
             self.data_areas.append(area)
-            self.index_groups[DataAreaIndexGroup[area_type]] = area
+            self.index_groups[index_group] = area
 
             for sym in tmc_area.find(pytmc.parser.Symbol):
                 area.add_symbol(sym)
