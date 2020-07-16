@@ -575,6 +575,10 @@ class AdsWriteRequest(_AdsStructBase):
     _dict_mapping = {'_data_start': 'data',
                      '_index_group': 'index_group'}
 
+    @property
+    def handle(self) -> int:
+        return self.index_offset
+
 
 @use_for_request(constants.AdsCommandId.READ_WRITE)
 class AdsReadWriteRequest(_AdsStructBase):

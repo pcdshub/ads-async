@@ -48,7 +48,13 @@ class AsyncioAcceptedClient:
                 await self._handle_command(header, item)
 
     async def _handle_command(self, header: structs.AoEHeader, item):
-        response = self.client.handle_command(header, item)
+        try:
+            response = self.client.handle_command(header, item)
+        except Exception as ex:
+            logger.exception('handle_command failed')
+            response = protocol.ErrorResponse(
+                code=constants.AdsError.DEVICE_ERROR,  # TODO
+                reason=str(ex))
 
         if isinstance(response, protocol.AsynchronousResponse):
             response.requester = self
@@ -129,6 +135,11 @@ class AsyncioServer:
             await client._receive_loop()
         finally:
             self.server.remove_client(client_addr)
+
+            # TODO: debug stuff:
+            import os
+            if bool(os.environ.get('ADS_ASYNC_SINGLE_SHOT', 0)):
+                await self.stop()
 
 
 if __name__ == '__main__':

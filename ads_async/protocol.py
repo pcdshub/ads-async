@@ -144,11 +144,19 @@ class AcceptedClient:
     def _handle_write(self, header: structs.AoEHeader,
                       request: structs.AdsWriteRequest):
         if request.index_group == constants.AdsIndexGroup.SYM_RELEASEHND:
-            handle = request.data  # <-- decode
-            print('handle', handle)
+            handle = request.handle
+            self.handle_to_symbol.pop(handle, None)
             return [structs.AoEResponseHeader()]
 
-        print('unhandled write', request.index_group)
+        if request.index_group == constants.AdsIndexGroup.SYM_VALBYHND:
+            symbol = self.handle_to_symbol[request.handle]
+            old_value = repr(symbol.value)
+            symbol.write(request.data)
+            self.log.debug('Writing symbol %s old value: %s new value: %s',
+                           symbol, old_value, symbol.value)
+            return [structs.AoEResponseHeader()]
+
+        raise ValueError(f'unhandled write: {request.index_group}')
 
     def _handle_read(self, header: structs.AoEHeader,
                      request: structs.AdsReadRequest):
