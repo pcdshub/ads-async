@@ -5,6 +5,7 @@ import os
 ADS_TCP_SERVER_PORT = 0xBF02
 ADS_ASYNC_STRING_ENCODING = os.environ.get('ADS_ASYNC_STRING_ENCODING',
                                            'utf-8')
+# TODO: some scenarios where ADS data can be big endian?
 
 
 class AmsPort(enum.IntEnum):
@@ -342,6 +343,10 @@ class AdsDataType(enum.IntEnum):
     REAL80 = 32
     BIT = 33
     MAXTYPES = 34
+
+    @property
+    def ctypes_type(self):
+        return self.to_ctypes[self]
 
 
 AdsDataType.to_ctypes = {

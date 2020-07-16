@@ -52,7 +52,7 @@ class Symbol:
         self.array_length = array_length
         self.data_type = data_type
 
-        ctypes_base_type = AdsDataType.to_ctypes[self.data_type]
+        ctypes_base_type = self.data_type.ctypes_type
         if array_length > 1:
             self.ctypes_data_type = (array_length * ctypes_base_type)
         else:
