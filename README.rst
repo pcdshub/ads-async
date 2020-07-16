@@ -9,34 +9,27 @@ ads-async
         :target: https://pypi.python.org/pypi/ads-async
 
 
-Python TwinCAT ADS async tools
-
-Documentation
--------------
-
-Sphinx-generated documentation for this project can be found here:
-https://pcdshub.github.io/ads-async/
+Asyncio (or sans-i/o) TwinCAT AMS/ADS testing server in pure Python.
 
 
 Requirements
 ------------
 
-Describe the project requirements (i.e. Python version, packages and how to install them)
+* Python 3.6+
+* (Optional) pytmc (for loading .tmc files in the server)
+
 
 Installation
 ------------
+::
 
-Describe the installation procedure
+  $ git clone git@github.com:pcdshub/ads-async
+  $ cd ads-async
+  $ pip install .
 
 Running the Tests
 -----------------
 ::
 
-  $ python run_tests.py
-
-Directory Structure
--------------------
-
-This repo is based the PCDS python cookiecutter. See the following github page for more info:
-
-- `cookiecutter-pcds-python <https://github.com/pcdshub/cookiecutter-pcds-python>`_
+  $ pip install pytest
+  $ pytest -vv ads_async/tests

@@ -11,7 +11,7 @@ env:
     - DOCS_REQUIREMENTS="dev-requirements.txt requirements.txt"
     # Options to be passed to flake8 for package linting. Usually this is just
     # the package name but you can enable other flake8 options via this config
-    - PYTHON_LINT_OPTIONS="ads-async"
+    - PYTHON_LINT_OPTIONS="ads_async"
 
     # The name of the conda package
     - CONDA_PACKAGE="ads-async"
