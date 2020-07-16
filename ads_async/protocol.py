@@ -194,6 +194,7 @@ class AcceptedClient:
                 comment=symbol.__doc__ or '',
             )
             # TODO: double serialization
+
             return [
                 structs.AoEReadResponseHeader(
                     read_length=len(symbol_entry.serialize())),

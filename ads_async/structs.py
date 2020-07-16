@@ -2,6 +2,7 @@ import ctypes
 import enum
 import functools
 import ipaddress
+import struct
 import typing
 
 from . import constants
@@ -38,12 +39,21 @@ def get_struct_by_command(command_id: constants.AdsCommandId, request: bool):
     return _commands[command_id][key]
 
 
+def string_to_byte_string(s: str) -> bytes:
+    return bytes(s, constants.ADS_ASYNC_STRING_ENCODING)
+
+
+def byte_string_to_string(s: bytes) -> str:
+    return str(s, constants.ADS_ASYNC_STRING_ENCODING)
+
+
 class _AdsStructBase(ctypes.LittleEndianStructure):
     # To be overridden by subclasses:
     _command_id: constants.AdsCommandId = constants.AdsCommandId.INVALID
 
     _pack_ = 1
     _dict_mapping = {}
+    _payload_fields = []
 
     @property
     def _dict_attrs(self):
@@ -65,6 +75,40 @@ class _AdsStructBase(ctypes.LittleEndianStructure):
         formatted_args = ", ".join(f"{k!s}={v!r}"
                                    for k, v in self.to_dict().items())
         return f"{self.__class__.__name__}({formatted_args})"
+
+    def serialize(self) -> bytearray:
+        packed = bytearray(self)
+
+        for attr, fmt, padding, _, serialize in self._payload_fields:
+            fmt = fmt.format(self=self)
+            # length = struct.calcsize(fmt)
+            value = getattr(self, attr)
+            if serialize is not None:
+                value = serialize(value)
+            packed.extend(struct.pack(fmt, value) + b'\00' * padding)
+
+        return packed
+
+    @classmethod
+    def from_buffer_extended(cls, buf):
+        # TODO: this is a workaround to not being able to override
+        # `from_buffer`
+        if not cls._payload_fields:
+            return cls.from_buffer(buf)
+
+        new_struct = cls.from_buffer(buf)
+
+        payload_buf = memoryview(buf)[ctypes.sizeof(cls):]
+        for attr, fmt, padding, deserialize, serialize in cls._payload_fields:
+            fmt = fmt.format(self=new_struct)
+            length = struct.calcsize(fmt)
+            value = struct.unpack(fmt, payload_buf[:length])
+            payload_buf = payload_buf[length + padding:]
+            if deserialize is not None:
+                value = deserialize(*value)
+            setattr(new_struct, attr, value)
+
+        return new_struct
 
 
 def _create_enum_property(field_name: str,
@@ -384,6 +428,9 @@ class AdsSymbolEntry(_AdsStructBase):
     name_length: int
     type_length: int
     comment_length: int
+    _name: str = ''
+    _type_name: str = ''
+    _comment: str = ''
     name: str
     type_name: str
     comment: str
@@ -408,6 +455,15 @@ class AdsSymbolEntry(_AdsStructBase):
         # length of comment (null terminating character not counted)
         ('comment_length', ctypes.c_uint16),
         ('_data_start', ctypes.c_uint8 * 0),
+    ]
+
+    _payload_fields = [
+        ('_name', '{self.name_length}s', 1,
+         byte_string_to_string, string_to_byte_string),
+        ('_type_name', '{self.type_length}s', 1,
+         byte_string_to_string, string_to_byte_string),
+        ('_comment', '{self.comment_length}s', 1,
+         byte_string_to_string, string_to_byte_string),
     ]
 
     flags = _create_enum_property('_flags', constants.AdsSymbolFlag)
@@ -440,9 +496,9 @@ class AdsSymbolEntry(_AdsStructBase):
                          0,
                          0,
                          )
-        self.name = name
-        self.type_name = type_name
-        self.comment = comment
+        self._name = name
+        self._type_name = type_name
+        self._comment = comment
         self._update_lengths()
 
     @property
@@ -452,51 +508,43 @@ class AdsSymbolEntry(_AdsStructBase):
                     comment=self.comment)
 
     @property
-    def _payload_length(self):
-        return sum(
-            (self.name_length,
-             self.type_length,
-             self.comment_length,
-             3,  # 3 null terminators not included in length
-             )
-        )
+    def name(self) -> str:
+        return self._name
+
+    @name.setter
+    def name(self, value):
+        self._name = value
+        self._update_lengths()
+
+    @property
+    def type_name(self) -> str:
+        return self._type_name
+
+    @type_name.setter
+    def type_name(self, value):
+        self._type_name = value
+        self._update_lengths()
+
+    @property
+    def comment(self) -> str:
+        return self._comment
+
+    @comment.setter
+    def comment(self, value):
+        self._comment = value
+        self._update_lengths()
 
     def _update_lengths(self):
         self.name_length = len(self.name)
         self.type_length = len(self.type_name)
         self.comment_length = len(self.comment)
-        self.entry_length = (ctypes.sizeof(AdsSymbolEntry) +
-                             self._payload_length)
-
-    @classmethod
-    def from_buffer_extended(cls, buf):
-        struct = cls.from_buffer(buf)
-
-        data_start = AdsSymbolEntry._data_start.offset
-        data_length = struct._payload_length
-        struct.data = bytearray(buf[data_start:data_start + data_length])
-
-        view = memoryview(struct.data)
-        struct.name = str(view[:struct.name_length],
-                          constants.ADS_ASYNC_STRING_ENCODING)
-        view = view[struct.name_length + 1:]
-
-        struct.type_name = str(view[:struct.type_length],
-                               constants.ADS_ASYNC_STRING_ENCODING)
-        view = view[struct.type_length + 1:]
-
-        struct.comment = str(view[:struct.comment_length],
-                             constants.ADS_ASYNC_STRING_ENCODING)
-        return struct
-
-    def serialize(self) -> bytearray:
-        self._update_lengths()
-        packed = bytearray(self)
-
-        for s in (self.name, self.type_name, self.comment):
-            packed.extend(
-                s.encode(constants.ADS_ASYNC_STRING_ENCODING) + b'\x00')
-        return packed
+        self.entry_length = sum((
+            ctypes.sizeof(AdsSymbolEntry),
+            self.name_length,
+            self.type_length,
+            self.comment_length,
+            3,  # uncounted null terminators
+        ))
 
 
 @use_for_request(constants.AdsCommandId.WRITE)
