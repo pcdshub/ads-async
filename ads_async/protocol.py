@@ -118,7 +118,7 @@ class AcceptedClient:
         self.server_host = server_host
         self.address = address
         self.handle_to_symbol = {}
-        # self.symbol_to_handle = {}
+        self.handle_to_notification = {}
         self._handle_counter = utils.ThreadsafeCounter(
             initial_value=100,
             max_count=2 ** 32,  # handles are uint32
@@ -155,6 +155,21 @@ class AcceptedClient:
         except KeyError as ex:
             raise ErrorResponse(code=AdsError.CLIENT_INVALIDPARM,  # TODO?
                                 reason=f'{ex} bad handle') from None
+
+    def _handle_add_notification_request(
+            self, header: structs.AoEHeader,
+            request: structs.AdsAddDeviceNotificationRequest):
+        self.handle_to_notification.pop(request.handle)
+
+    def _handle_delete_notification_request(
+            self, header: structs.AoEHeader,
+            request: structs.AdsDeleteDeviceNotificationRequest):
+        self.handle_to_notification.pop(request.handle)
+
+    def _handle_write_control(
+            self, header: structs.AoEHeader,
+            request: structs.AdsWriteControlRequest):
+        raise NotImplementedError('write_control')
 
     def _handle_write(self, header: structs.AoEHeader,
                       request: structs.AdsWriteRequest):
@@ -214,8 +229,7 @@ class AcceptedClient:
                 type_name=symbol.data_type.name,
                 comment=symbol.__doc__ or '',
             )
-            # TODO: double serialization
-
+            # TODO: double serialization done for length here:
             return [
                 structs.AoEReadResponseHeader(
                     read_length=len(symbol_entry.serialize())),
@@ -240,19 +254,20 @@ class AcceptedClient:
                                                  0  # TODO: find docs
                                                  )
                     ]
-        if command == AdsCommandId.READ_WRITE:
-            return self._handle_read_write(header, request)
-        if command == AdsCommandId.READ:
-            return self._handle_read(header, request)
-        if command == AdsCommandId.WRITE:
-            return self._handle_write(header, request)
-        if command in {AdsCommandId.ADD_DEVICE_NOTIFICATION,
-                       AdsCommandId.DEL_DEVICE_NOTIFICATION,
-                       AdsCommandId.DEVICE_NOTIFICATION,
-                       AdsCommandId.WRITE_CONTROL}:
-            return AsynchronousResponse(header, request, self)
 
-        raise RuntimeError('Unknown command')  # TODO handle in caller
+        handler = {
+            AdsCommandId.READ_WRITE: self._handle_read_write,
+            AdsCommandId.READ: self._handle_read,
+            AdsCommandId.WRITE: self._handle_write,
+            AdsCommandId.ADD_DEVICE_NOTIFICATION: self._handle_add_notification_request,  # noqa
+            AdsCommandId.DEL_DEVICE_NOTIFICATION: self._handle_delete_notification_request,  # noqa
+            AdsCommandId.WRITE_CONTROL: self._handle_write_control,
+            # AdsCommandId.DEVICE_NOTIFICATION:  # ?
+        }.get(command, None)
+
+        if handler:
+            return handler(header, request)
+        raise RuntimeError('Unknown command')
 
     def received_data(self, data):
         self.recv_buffer += data

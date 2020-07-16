@@ -487,16 +487,8 @@ class AdsSymbolEntry(_AdsStructBase):
                  name: str,
                  type_name: str,
                  comment: str):
-        super().__init__(0,  # will be filled in later
-                         index_group,
-                         index_offset,
-                         size,
-                         data_type,
-                         flags,
-                         0,
-                         0,
-                         0,
-                         )
+        super().__init__(0, index_group, index_offset, size, data_type, flags,
+                         0, 0, 0,)
         self._name = name
         self._type_name = type_name
         self._comment = comment
@@ -710,18 +702,30 @@ class AdsReadStateResponse(_AdsStructBase):
     _dict_mapping = {'_ads_state': 'ads_state'}
 
 
+@use_for_request(constants.AdsCommandId.WRITE_CONTROL)
 class AdsWriteControlRequest(_AdsStructBase):
-    ads_state: int
+    _ads_state: int
+    ads_state: constants.AdsState
     dev_state: int
     length: int
+    data: bytes
 
     _fields_ = [
-        ('ads_state', ctypes.c_uint16),
+        ('_ads_state', ctypes.c_uint16),
         ('dev_state', ctypes.c_uint16),
         ('length', ctypes.c_uint32),
+        ('_data_start', ctypes.c_ubyte * 0),
+    ]
+    _payload_fields = [
+        ('data', '{self.write_length}s', 1, bytes, bytes),
     ]
 
+    ads_state = _create_enum_property('_ads_state', constants.AdsState)
+    _dict_mapping = {'_data_start': 'data',
+                     '_ads_state': 'ads_state'}
 
+
+@use_for_request(constants.AdsCommandId.ADD_DEVICE_NOTIFICATION)
 class AdsAddDeviceNotificationRequest(_AdsStructBase):
     group: int
     offset: int
@@ -738,6 +742,14 @@ class AdsAddDeviceNotificationRequest(_AdsStructBase):
         ('max_delay', ctypes.c_uint32),
         ('cycle_time', ctypes.c_uint32),
         ('reserved', ctypes.c_ubyte * 16),
+    ]
+
+
+@use_for_request(constants.AdsCommandId.DEL_DEVICE_NOTIFICATION)
+class AdsDeleteDeviceNotificationRequest(_AdsStructBase):
+    handle: int
+    _fields_ = [
+        ('handle', ctypes.c_uint32),
     ]
 
 
