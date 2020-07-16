@@ -250,12 +250,7 @@ class AcceptedClient:
                 type_name=symbol.data_type.name,
                 comment=symbol.__doc__ or '',
             )
-            # TODO: double serialization done for length here:
-            return [
-                structs.AoEReadResponseHeader(
-                    read_length=len(symbol_entry.serialize())),
-                symbol_entry
-            ]
+            return [structs.AoEReadResponse(data=symbol_entry)]
 
         # return AsynchronousResponse(header, request, self)
 

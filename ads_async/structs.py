@@ -638,6 +638,18 @@ class AdsReadWriteRequest(_AdsStructBase):
         request.data = data
         return request
 
+    @classmethod
+    def create_info_by_name_request(cls, name: str) -> 'AdsReadWriteRequest':
+        # Read length includes up to 3 T_MaxString strings:
+        read_length = ctypes.sizeof(AdsSymbolEntry) + 3 * 256
+
+        data = string_to_byte_string(name) + b'\x00'
+        write_length = len(data)
+        request = cls(constants.AdsIndexGroup.SYM_INFOBYNAMEEX, 0, read_length,
+                      write_length)
+        request.data = data
+        return request
+
 
 @use_for_request(constants.AdsCommandId.READ)
 class AdsReadRequest(_AdsStructBase):
@@ -886,14 +898,12 @@ class AoEReadResponse(AoEResponseHeader):
                  length: int = 0,
                  data: typing.Any = None,
                  ):
-        if data is not None:
-            data = bytes(data)
-            length = len(data)
-        else:
-            data = None
-
         super().__init__(result, length)
         self.data = data
+
+    def serialize(self) -> bytearray:
+        self.read_length = len(bytes(self.data))
+        return super().serialize()
 
 
 class AoEHandleResponse(AoEResponseHeader):
