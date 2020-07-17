@@ -65,11 +65,14 @@ class Symbol:
         return self.ctypes_data_type.from_buffer(raw)
 
     def write(self, value):
-        if not isinstance(value, type(ctypes.c_int)):
-            consumed, value = structs.deserialize_data(
-                data_type=self.data_type, data=value,
-                length=self.array_length,
-            )
+        if not isinstance(value, ctypes._SimpleCData):
+            if isinstance(value, bytes):
+                consumed, value = structs.deserialize_data(
+                    data_type=self.data_type, data=value,
+                    length=self.array_length,
+                )
+            else:
+                value = self.ctypes_data_type(value)
 
         logger.debug('Symbol %s write %s', self, value)
         return self.memory.write(self.offset, bytes(value))
