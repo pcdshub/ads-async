@@ -78,10 +78,6 @@ class _AdsStructBase(ctypes.LittleEndianStructure):
         return {attr: getattr(self, attr)
                 for attr in self._dict_attrs}
 
-    @property
-    def serialized_length(self) -> int:
-        return ctypes.sizeof(self)
-
     def __repr__(self):
         formatted_args = ", ".join(f"{k!s}={v!r}"
                                    for k, v in self.to_dict().items())
@@ -571,7 +567,7 @@ class AdsWriteRequest(_AdsStructBase):
     ]
 
     _payload_fields = [
-        ('data', '{self.write_length}s', 1, bytes, bytes),
+        ('data', '{self.write_length}s', 0, bytes, bytes),
     ]
 
     index_group = _create_enum_property('_index_group',
@@ -622,7 +618,7 @@ class AdsReadWriteRequest(_AdsStructBase):
     ]
 
     _payload_fields = [
-        ('data', '{self.write_length}s', 1, bytes, bytes),
+        ('data', '{self.write_length}s', 0, bytes, bytes),
     ]
 
     index_group = _create_enum_property('_index_group',
@@ -761,7 +757,7 @@ class AdsWriteControlRequest(_AdsStructBase):
         ('_data_start', ctypes.c_ubyte * 0),
     ]
     _payload_fields = [
-        ('data', '{self.write_length}s', 1, bytes, bytes),
+        ('data', '{self.write_length}s', 0, bytes, bytes),
     ]
 
     ads_state = _create_enum_property('_ads_state', constants.AdsState)
@@ -898,7 +894,7 @@ class AoEReadResponse(AoEResponseHeader):
     ]
 
     _payload_fields = [
-        ('data', '{self.read_length}s', 1, bytes, bytes),
+        ('data', '{self.read_length}s', 0, bytes, bytes),
     ]
 
     _dict_mapping = {'_data_start': 'data'}
