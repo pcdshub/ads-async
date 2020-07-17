@@ -80,7 +80,6 @@ class AsyncioAcceptedClient:
             err_response = err_cls(result=response.code)
             await self.send_response(err_response,
                                      request_header=header,
-                                     # ads_error=response.code, ?
                                      )
         else:
             await self.send_response(*response, request_header=header)

@@ -15,10 +15,32 @@ _AMS_HEADER_LENGTH = ctypes.sizeof(structs.AmsTcpHeader)
 _AOE_HEADER_LENGTH = ctypes.sizeof(structs.AoEHeader)
 
 
-def from_wire(buf, *, logger=module_logger,
-              ) -> typing.Generator[
-                      typing.Tuple[structs.AoEHeader, typing.Any], None, None]:
+def from_wire(
+        buf: bytearray, *,
+        logger: logging.Logger = module_logger,
+        ) -> typing.Generator[typing.Tuple[structs.AoEHeader, typing.Any],
+                              None, None]:
+    """
+    Deserialize data from the wire into ctypes structures.
 
+    Parameters
+    ----------
+    buf : bytearray
+        The receive data buffer.
+
+    logger : logging.Logger, optional
+        Logger to use in reporting malformed data.  Defaults to the module
+        logger.
+
+    Yields
+    ------
+    header: structs.AoEHeader
+        The header associated with `item`.
+
+    item: structs._AdsStructBase or memoryview
+        Deserialized to the correct structure, if recognized. If not,
+        a memoryview to inside the buffer.
+    """
     header: structs.AmsTcpHeader
     aoe_header: structs.AoEHeader
 
@@ -78,11 +100,32 @@ def from_wire(buf, *, logger=module_logger,
 
 
 def response_to_wire(
-        *items: structs._AdsStructBase,
+        *items: typing.Union[structs._AdsStructBase, bytes],
         request_header: structs.AoEHeader,
         ads_error: AdsError = AdsError.NOERR
         ) -> typing.Tuple[list, bytearray]:
+    """
+    Prepare `items` to be sent over the wire.
 
+    Parameters
+    -------
+    *items : structs._AdsStructBase or bytes
+        Individual structures or pre-serialized data to send.
+
+    request_header : structs.AoEHeader
+        The request to respond to.
+
+    ads_error : AdsError
+        The AoEHeader error code to return.
+
+    Returns
+    -------
+    headers_and_items : list
+        All headers and items to be serialized, in order.
+
+    data : bytearray
+        Serialized data to send.
+    """
     items_serialized = [structs.serialize(item) for item in items]
     item_length = sum(len(item) for item in items_serialized)
 
@@ -116,6 +159,8 @@ class Notification:
 
 def _command_handler(cmd: constants.AdsCommandId,
                      index_group: constants.AdsIndexGroup = None):
+    """Decorator to indicate a handler method for the given command/group."""
+
     def wrapper(method):
         if not hasattr(method, '_handle_commands'):
             method._handles_commands = set()
@@ -125,9 +170,37 @@ def _command_handler(cmd: constants.AdsCommandId,
 
 
 class AcceptedClient:
-    # Client only from perspective of server, for now
+    """
+    A client which connected to a :class:`Server`.
 
-    def __init__(self, server, server_host, address):
+    Parameters
+    ----------
+    server : Server
+        The server instance.
+
+    server_host : (host, port)
+        The host and port the client connected to.
+
+    address : (host, port)
+        The client address.
+    """
+
+    _handle_counter: utils.ThreadsafeCounter
+    _notification_counter: utils.ThreadsafeCounter
+    address: typing.Tuple[str, int]
+    handle_to_notification: dict
+    handle_to_symbol: dict
+    log: log.ComposableLogAdapter
+    recv_buffer: bytearray
+    server: 'Server'
+    server_host: typing.Tuple[str, int]
+    tags: dict
+
+    def __init__(self,
+                 server: 'Server',
+                 server_host: typing.Tuple[str, int],
+                 address: typing.Tuple[str, int]
+                 ):
         self.recv_buffer = bytearray()
         self.server = server
         self.server_host = server_host
@@ -159,9 +232,10 @@ class AcceptedClient:
         )
 
     def disconnected(self):
-        ...
+        """Disconnected callback."""
 
     def _get_symbol_by_request_name(self, request) -> Symbol:
+        """Get symbol by a request with a name as its payload."""
         symbol_name = structs.byte_string_to_string(request.data)
         try:
             return self.server.database.get_symbol_by_name(symbol_name)
@@ -173,6 +247,7 @@ class AcceptedClient:
             ) from None
 
     def _get_symbol_by_request_handle(self, request) -> Symbol:
+        """Get symbol by a request with a handle as its payload."""
         try:
             return self.handle_to_symbol[request.handle]
         except KeyError as ex:
@@ -338,6 +413,25 @@ class AcceptedClient:
 
     def handle_command(self, header: structs.AoEHeader,
                        request: typing.Optional[structs._AdsStructBase]):
+        """
+        Top-level command dispatcher.
+
+        First stop to determine which method will handle the given command.
+
+        Parameters
+        ----------
+        header : structs.AoEHeader
+            The request header.
+
+        request : structs._AdsStructBase or None
+            The request itself.  May be optional depending on the header's
+            AdsCommandId.
+
+        Returns
+        -------
+        response : list
+            List of commands or byte strings to be serialized.
+        """
         command = header.command_id
         self.log.debug('Handling %s', command,
                        extra={'sequence': header.invoke_id})
@@ -358,6 +452,7 @@ class AcceptedClient:
         raise RuntimeError(f'No handler defined for command {keys}')
 
     def received_data(self, data):
+        """Hook for new data received over the socket."""
         self.recv_buffer += data
         for consumed, item in from_wire(self.recv_buffer, logger=self.log):
             self.log.debug('%s', item,
@@ -367,10 +462,29 @@ class AcceptedClient:
             yield item
 
     def response_to_wire(
-            self, *items: structs._AdsStructBase,
+            self, *items: typing.Union[structs._AdsStructBase, bytes],
             request_header: structs.AoEHeader,
             ads_error: AdsError = AdsError.NOERR
             ) -> bytearray:
+        """
+        Prepare `items` to be sent over the wire.
+
+        Parameters
+        -------
+        *items : structs._AdsStructBase or bytes
+            Individual structures or pre-serialized data to send.
+
+        request_header : structs.AoEHeader
+            The request to respond to.
+
+        ads_error : AdsError
+            The AoEHeader error code to return.
+
+        Returns
+        -------
+        data : bytearray
+            Serialized data to send.
+        """
 
         items, bytes_to_send = response_to_wire(
             *items,
@@ -378,19 +492,24 @@ class AcceptedClient:
             ads_error=ads_error
         )
 
-        extra = {
-            'direction': '--->>>',
-            'sequence': request_header.invoke_id,
-            'bytesize': len(bytes_to_send),
-        }
-        for idx, item in enumerate(items, 1):
-            extra['counter'] = (idx, len(items))
-            self.log.debug('%s', item, extra=extra)
+        if self.log.isEnabledFor(logging.DEBUG):
+            extra = {
+                'direction': '--->>>',
+                'sequence': request_header.invoke_id,
+                'bytesize': len(bytes_to_send),
+            }
+            for idx, item in enumerate(items, 1):
+                extra['counter'] = (idx, len(items))
+                self.log.debug('%s', item, extra=extra)
 
         return bytes_to_send
 
 
 def _aggregate_handlers(cls: type) -> dict:
+    """
+    Aggregate the `_handlers` dictionary, for use in
+    `AcceptedClient.handle_command`.
+    """
     for attr, obj in inspect.getmembers(cls):
         for handles in getattr(obj, '_handles_commands', []):
             yield handles, getattr(cls, attr)
@@ -431,7 +550,22 @@ class AsynchronousResponse:
 
 
 class Server:
-    _version = (0, 0, 0)  # TODO: from versioneer
+    """
+    An ADS server which manages :class:`AcceptedClient` instances.
+
+    This server does not interact with sockets directly.  A layer must be added
+    on top to have a functional server.
+
+    See Also
+    --------
+    :class:`.asyncio.server.AsyncioServer`
+    """
+
+    _version: typing.Tuple[int, int, int] = (0, 0, 0)  # TODO: from versioneer
+    _name: str
+    clients: dict
+    database: Database
+    log: log.ComposableLogAdapter
 
     def __init__(self, database: Database, *, name='AdsAsync'):
         self._name = name
@@ -443,25 +577,54 @@ class Server:
 
         self.log = log.ComposableLogAdapter(module_logger, tags)
 
-    def add_client(self, server_host, address):
+    def add_client(self,
+                   server_host: typing.Tuple[str, int],
+                   address: typing.Tuple[str, int]
+                   ) -> AcceptedClient:
+        """
+        Add a new client.
+
+        Parameters
+        ----------
+        server_host : (host, port)
+            The host and port the client connected to.
+
+        address : (host, port)
+            The client address.
+
+        Returns
+        -------
+        client : AcceptedClient
+        """
         client = AcceptedClient(self, server_host, address)
         self.clients[address] = client
         self.log.info('New client (%d total): %s', len(self.clients), client)
         return client
 
-    def remove_client(self, address):
+    def remove_client(self, address: typing.Tuple[str, int]):
+        """
+        Remove a client by address.
+
+        Parameters
+        ----------
+        address : (host, port)
+            The client address.
+        """
         client = self.clients.pop(address)
         self.log.info('Removing client (%d total): %s', len(self.clients),
                       client)
 
     @property
     def ads_state(self) -> constants.AdsState:
+        """The current state of the server."""
         return constants.AdsState.RUN
 
     @property
     def version(self) -> typing.Tuple[int, int, int]:
+        """The server version."""
         return self._version
 
     @property
     def name(self) -> str:
+        """The server name."""
         return self._name
