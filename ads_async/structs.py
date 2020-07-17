@@ -48,7 +48,8 @@ def byte_string_to_string(s: bytes) -> str:
     return value.split('\x00')[0]
 
 
-def _serialize(obj):
+def serialize(obj):
+    # TODO: better way around this? would like to bake it into __bytes__
     if hasattr(obj, 'serialize'):
         return obj.serialize()
     return bytes(obj)
@@ -123,7 +124,6 @@ class _AdsStructBase(ctypes.LittleEndianStructure):
             payload_buf = payload_buf[length + padding:]
             if deserialize is not None:
                 value = deserialize(*value)
-            print(attr, 'deserialized', value)
             setattr(new_struct, attr, value)
 
         return new_struct
@@ -581,7 +581,7 @@ class AdsWriteRequest(_AdsStructBase):
     ]
 
     _payload_fields = [
-        ('data', '{self.write_length}s', 0, bytes, _serialize),
+        ('data', '{self.write_length}s', 0, bytes, serialize),
     ]
 
     index_group = _create_enum_property('_index_group',
@@ -632,7 +632,7 @@ class AdsReadWriteRequest(_AdsStructBase):
     ]
 
     _payload_fields = [
-        ('data', '{self.write_length}s', 0, bytes, _serialize),
+        ('data', '{self.write_length}s', 0, bytes, serialize),
     ]
 
     index_group = _create_enum_property('_index_group',
@@ -771,7 +771,7 @@ class AdsWriteControlRequest(_AdsStructBase):
         ('_data_start', ctypes.c_ubyte * 0),
     ]
     _payload_fields = [
-        ('data', '{self.write_length}s', 0, bytes, _serialize),
+        ('data', '{self.write_length}s', 0, bytes, serialize),
     ]
 
     ads_state = _create_enum_property('_ads_state', constants.AdsState)
@@ -908,7 +908,7 @@ class AoEReadResponse(AoEResponseHeader):
     ]
 
     _payload_fields = [
-        ('data', '{self.read_length}s', 0, bytes, _serialize),
+        ('data', '{self.read_length}s', 0, bytes, serialize),
     ]
 
     _dict_mapping = {'_data_start': 'data'}
@@ -924,7 +924,7 @@ class AoEReadResponse(AoEResponseHeader):
 
     def serialize(self) -> bytearray:
         # TODO: double serialization
-        self.read_length = len(_serialize(self.data))
+        self.read_length = len(serialize(self.data))
         return super().serialize()
 
 

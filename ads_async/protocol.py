@@ -81,12 +81,7 @@ def response_to_wire(
         ads_error: AdsError = AdsError.NOERR
         ) -> typing.Tuple[list, bytearray]:
 
-    # TODO: better way around this? would like to bake it into __bytes__
-    items_serialized = [item.serialize()
-                        if hasattr(item, 'serialize')
-                        else bytes(item)
-                        for item in items]
-
+    items_serialized = [structs.serialize(item) for item in items]
     item_length = sum(len(item) for item in items_serialized)
 
     headers = [
@@ -272,19 +267,29 @@ class AcceptedClient:
             buf = bytearray(request.data)
 
             results = []
+            data = []
             for idx in range(count):
                 read_req = structs.AdsReadRequest.from_buffer(buf)
                 read_response = self._handle_read(header, read_req)
-                self.log.debug('[%d] %s -> %s', idx + 1, read_req,
-                               read_response)
+                self.log.warning('[%d] %s -> %s', idx + 1, read_req,
+                                 read_response)
                 if read_response is not None:
-                    results.append(read_response[0].data)
+                    results.append(read_response[0].result)
+                    data.append(read_response[0].data)
                 else:
-                    results.append(bytes(read_req.length))  # TODO (?)
+                    # TODO (?)
+                    results.append(AdsError.DEVICE_ERROR)
+                    data.append(bytes(read_req.length))
                 buf = buf[read_size:]
 
-            data = b''.join(bytes(res) for res in results)
-            return [structs.AoEReadResponse(data=data)]
+            if request.index_offset != 0:
+                to_send = [ctypes.c_uint32(res) for res in results] + data
+            else:
+                to_send = data
+
+            return [structs.AoEReadResponse(
+                data=b''.join(structs.serialize(res) for res in to_send)
+            )]
 
         # return AsynchronousResponse(header, request, self)
 
