@@ -355,8 +355,6 @@ class AcceptedClient:
             else:
                 return handler(self, header, request)
 
-        print(self._handlers)
-        print((command, None) in self._handlers)
         raise RuntimeError(f'No handler defined for command {keys}')
 
     def received_data(self, data):
