@@ -1,4 +1,6 @@
+import copy
 import ctypes
+import inspect
 import logging
 import typing
 
@@ -112,6 +114,16 @@ class Notification:
         self.symbol = symbol
 
 
+def _command_handler(cmd: constants.AdsCommandId,
+                     index_group: constants.AdsIndexGroup = None):
+    def wrapper(method):
+        if not hasattr(method, '_handle_commands'):
+            method._handles_commands = set()
+        method._handles_commands.add((cmd, index_group))
+        return method
+    return wrapper
+
+
 class AcceptedClient:
     # Client only from perspective of server, for now
 
@@ -168,10 +180,9 @@ class AcceptedClient:
                                 reason=f'{ex} bad handle',
                                 request=request) from None
 
-    def _handle_add_notification_request(
-            self, header: structs.AoEHeader,
-            request: structs.AdsAddDeviceNotificationRequest):
-
+    @_command_handler(AdsCommandId.ADD_DEVICE_NOTIFICATION)
+    def _add_notification(self, header: structs.AoEHeader,
+                          request: structs.AdsAddDeviceNotificationRequest):
         if request.index_group == AdsIndexGroup.SYM_VALBYHND:
             symbol = self._get_symbol_by_request_handle(request)
             handle = self._handle_counter()
@@ -181,50 +192,54 @@ class AcceptedClient:
             )
             return [structs.AoENotificationHandleResponse(handle=handle)]
 
-    def _handle_delete_notification_request(
+    @_command_handler(AdsCommandId.DEL_DEVICE_NOTIFICATION)
+    def _delete_notification(
             self, header: structs.AoEHeader,
             request: structs.AdsDeleteDeviceNotificationRequest):
         self.handle_to_notification.pop(request.handle)
         return [structs.AoEResponseHeader(AdsError.NOERR)]
 
-    def _handle_write_control(
-            self, header: structs.AoEHeader,
-            request: structs.AdsWriteControlRequest):
+    @_command_handler(AdsCommandId.WRITE_CONTROL)
+    def _write_control(self, header: structs.AoEHeader,
+                       request: structs.AdsWriteControlRequest):
         raise NotImplementedError('write_control')
 
-    def _handle_write(self, header: structs.AoEHeader,
-                      request: structs.AdsWriteRequest):
-        if request.index_group == AdsIndexGroup.SYM_RELEASEHND:
-            handle = request.handle
-            self.handle_to_symbol.pop(handle, None)
-            return [structs.AoEResponseHeader()]
+    @_command_handler(AdsCommandId.WRITE, AdsIndexGroup.SYM_RELEASEHND)
+    def _write_release_handle(self, header: structs.AoEHeader,
+                              request: structs.AdsWriteRequest):
+        handle = request.handle
+        self.handle_to_symbol.pop(handle, None)
+        return [structs.AoEResponseHeader()]
 
-        if request.index_group in (AdsIndexGroup.SYM_VALBYHND,
-                                   AdsIndexGroup.SYM_VALBYNAME):
-            if request.index_group == AdsIndexGroup.SYM_VALBYHND:
-                symbol = self._get_symbol_by_request_handle(request)
-            else:
-                symbol = self._get_symbol_by_request_name(request)
+    @_command_handler(AdsCommandId.WRITE, AdsIndexGroup.SYM_VALBYHND)
+    @_command_handler(AdsCommandId.WRITE, AdsIndexGroup.SYM_VALBYNAME)
+    def _write_value(self, header: structs.AoEHeader,
+                     request: structs.AdsWriteRequest):
+        if request.index_group == AdsIndexGroup.SYM_VALBYHND:
+            symbol = self._get_symbol_by_request_handle(request)
+        else:
+            symbol = self._get_symbol_by_request_name(request)
 
-            old_value = repr(symbol.value)
-            symbol.write(request.data)
-            self.log.debug('Writing symbol %s old value: %s new value: %s',
-                           symbol, old_value, symbol.value)
-            return [structs.AoEResponseHeader()]
+        old_value = repr(symbol.value)
+        symbol.write(request.data)
+        self.log.debug('Writing symbol %s old value: %s new value: %s',
+                       symbol, old_value, symbol.value)
+        return [structs.AoEResponseHeader()]
 
-        raise ValueError(f'unhandled write: {request.index_group}')
+    @_command_handler(AdsCommandId.READ, AdsIndexGroup.SYM_VALBYHND)
+    @_command_handler(AdsCommandId.READ, AdsIndexGroup.SYM_VALBYNAME)
+    def _read_value(self, header: structs.AoEHeader,
+                    request: structs.AdsReadRequest):
+        if request.index_group == AdsIndexGroup.SYM_VALBYHND:
+            symbol = self._get_symbol_by_request_handle(request)
+        else:
+            symbol = self._get_symbol_by_request_name(request)
 
-    def _handle_read(self, header: structs.AoEHeader,
-                     request: structs.AdsReadRequest):
-        if request.index_group in (AdsIndexGroup.SYM_VALBYHND,
-                                   AdsIndexGroup.SYM_VALBYNAME):
-            if request.index_group == AdsIndexGroup.SYM_VALBYHND:
-                symbol = self._get_symbol_by_request_handle(request)
-            else:
-                symbol = self._get_symbol_by_request_name(request)
+        return [structs.AoEReadResponse(data=symbol.read())]
 
-            return [structs.AoEReadResponse(data=symbol.read())]
-
+    @_command_handler(AdsCommandId.READ)
+    def _read_catchall(self, header: structs.AoEHeader,
+                       request: structs.AdsReadRequest):
         try:
             data_area = self.server.database.index_groups[request.index_group]
         except KeyError:
@@ -237,92 +252,110 @@ class AcceptedClient:
             data = data_area.memory.read(request.index_offset, request.length)
             return [structs.AoEReadResponse(data=data)]
 
-    def _handle_read_write(self, header: structs.AoEHeader,
+    @_command_handler(AdsCommandId.READ_WRITE, AdsIndexGroup.SYM_HNDBYNAME)
+    def _read_write_handle(self, header: structs.AoEHeader,
                            request: structs.AdsReadWriteRequest):
-        if request.index_group == AdsIndexGroup.SYM_HNDBYNAME:
-            symbol = self._get_symbol_by_request_name(request)
-            handle = self._handle_counter()
-            self.handle_to_symbol[handle] = symbol
-            return [structs.AoEHandleResponse(result=AdsError.NOERR,
-                                              handle=handle)]
+        symbol = self._get_symbol_by_request_name(request)
+        handle = self._handle_counter()
+        self.handle_to_symbol[handle] = symbol
+        return [
+            structs.AoEHandleResponse(result=AdsError.NOERR, handle=handle)
+        ]
 
-        elif request.index_group == AdsIndexGroup.SYM_INFOBYNAMEEX:
-            symbol = self._get_symbol_by_request_name(request)
-            symbol_entry = structs.AdsSymbolEntry(
-                index_group=symbol.data_area.index_group.value,  # TODO
-                index_offset=symbol.offset,
-                size=symbol.size,
-                data_type=symbol.data_type,
-                flags=0,  # TODO symbol.flags
-                name=symbol.name,
-                type_name=symbol.data_type.name,
-                comment=symbol.__doc__ or '',
-            )
-            return [structs.AoEReadResponse(data=symbol_entry)]
+    @_command_handler(AdsCommandId.READ_WRITE, AdsIndexGroup.SYM_INFOBYNAMEEX)
+    def _read_write_info(self, header: structs.AoEHeader,
+                         request: structs.AdsReadWriteRequest):
+        symbol = self._get_symbol_by_request_name(request)
+        symbol_entry = structs.AdsSymbolEntry(
+            index_group=symbol.data_area.index_group.value,  # TODO
+            index_offset=symbol.offset,
+            size=symbol.size,
+            data_type=symbol.data_type,
+            flags=0,  # TODO symbol.flags
+            name=symbol.name,
+            type_name=symbol.data_type.name,
+            comment=symbol.__doc__ or '',
+        )
+        return [structs.AoEReadResponse(data=symbol_entry)]
 
-        elif request.index_group == AdsIndexGroup.SUMUP_READ:
-            read_size = ctypes.sizeof(structs.AdsReadRequest)
-            count = len(request.data) // read_size
-            self.log.debug('Request to read %d items', count)
-            buf = bytearray(request.data)
+    @_command_handler(AdsCommandId.READ_WRITE, AdsIndexGroup.SUMUP_READ)
+    def _read_write_sumup_read(self, header: structs.AoEHeader,
+                               request: structs.AdsReadWriteRequest):
+        read_size = ctypes.sizeof(structs.AdsReadRequest)
+        count = len(request.data) // read_size
+        self.log.debug('Request to read %d items', count)
+        buf = bytearray(request.data)
 
-            results = []
-            data = []
-            for idx in range(count):
-                read_req = structs.AdsReadRequest.from_buffer(buf)
-                read_response = self._handle_read(header, read_req)
-                self.log.warning('[%d] %s -> %s', idx + 1, read_req,
-                                 read_response)
-                if read_response is not None:
-                    results.append(read_response[0].result)
-                    data.append(read_response[0].data)
-                else:
-                    # TODO (?)
-                    results.append(AdsError.DEVICE_ERROR)
-                    data.append(bytes(read_req.length))
-                buf = buf[read_size:]
+        results = []
+        data = []
 
-            if request.index_offset != 0:
-                to_send = [ctypes.c_uint32(res) for res in results] + data
+        # Handle these as normal reads by making a fake READ header:
+        read_header = copy.copy(header)
+        read_header.command_id = AdsCommandId.READ
+
+        for idx in range(count):
+            read_req = structs.AdsReadRequest.from_buffer(buf)
+            read_response = self.handle_command(read_header, read_req)
+            self.log.debug('[%d] %s -> %s', idx + 1, read_req, read_response)
+            if read_response is not None:
+                results.append(read_response[0].result)
+                data.append(read_response[0].data)
             else:
-                to_send = data
+                # TODO (?)
+                results.append(AdsError.DEVICE_ERROR)
+                data.append(bytes(read_req.length))
+            buf = buf[read_size:]
 
-            return [structs.AoEReadResponse(
-                data=b''.join(structs.serialize(res) for res in to_send)
-            )]
+        if request.index_offset != 0:
+            to_send = [ctypes.c_uint32(res) for res in results] + data
+        else:
+            to_send = data
 
-        # return AsynchronousResponse(header, request, self)
+        return [structs.AoEReadResponse(
+            data=b''.join(structs.serialize(res) for res in to_send)
+        )]
+
+    @_command_handler(AdsCommandId.READ_WRITE)
+    def _read_write_catchall(self, header: structs.AoEHeader,
+                             request: structs.AdsReadWriteRequest):
+        ...
+
+    @_command_handler(AdsCommandId.READ_DEVICE_INFO)
+    def _read_device_info(self, header: structs.AoEHeader, request):
+        return [
+            structs.AoEResponseHeader(AdsError.NOERR),
+            structs.AdsDeviceInfo(*self.server.version, name=self.server.name)
+        ]
+
+    @_command_handler(AdsCommandId.READ_STATE)
+    def _read_state(self, header: structs.AoEHeader, request):
+        return [
+            structs.AoEResponseHeader(AdsError.NOERR),
+            structs.AdsReadStateResponse(self.server.ads_state,
+                                         0  # TODO: find docs
+                                         )
+        ]
 
     def handle_command(self, header: structs.AoEHeader,
                        request: typing.Optional[structs._AdsStructBase]):
         command = header.command_id
         self.log.debug('Handling %s', command,
                        extra={'sequence': header.invoke_id})
-        if command == AdsCommandId.READ_DEVICE_INFO:
-            return [structs.AoEResponseHeader(AdsError.NOERR),
-                    structs.AdsDeviceInfo(*self.server.version,
-                                          name=self.server.name)
-                    ]
-        if command == AdsCommandId.READ_STATE:
-            return [structs.AoEResponseHeader(AdsError.NOERR),
-                    structs.AdsReadStateResponse(self.server.ads_state,
-                                                 0  # TODO: find docs
-                                                 )
-                    ]
 
-        handler = {
-            AdsCommandId.READ_WRITE: self._handle_read_write,
-            AdsCommandId.READ: self._handle_read,
-            AdsCommandId.WRITE: self._handle_write,
-            AdsCommandId.ADD_DEVICE_NOTIFICATION: self._handle_add_notification_request,  # noqa
-            AdsCommandId.DEL_DEVICE_NOTIFICATION: self._handle_delete_notification_request,  # noqa
-            AdsCommandId.WRITE_CONTROL: self._handle_write_control,
-            # AdsCommandId.DEVICE_NOTIFICATION:  # ?
-        }.get(command, None)
+        if hasattr(request, 'index_group'):
+            keys = [(command, request.index_group), (command, None)]
+        else:
+            keys = [(command, None)]
 
-        if handler:
-            return handler(header, request)
-        raise RuntimeError('Unknown command')
+        for key in keys:
+            try:
+                handler = self._handlers[key]
+            except KeyError:
+                ...
+            else:
+                return handler(self, header, request)
+
+        raise RuntimeError(f'No handler defined for command {keys}')
 
     def received_data(self, data):
         self.recv_buffer += data
@@ -355,6 +388,15 @@ class AcceptedClient:
             self.log.debug('%s', item, extra=extra)
 
         return bytes_to_send
+
+
+def _aggregate_handlers(cls: type) -> dict:
+    for attr, obj in inspect.getmembers(cls):
+        for handles in getattr(obj, '_handles_commands', []):
+            yield handles, getattr(cls, attr)
+
+
+AcceptedClient._handlers = dict(_aggregate_handlers(AcceptedClient))
 
 
 class ErrorResponse(Exception):

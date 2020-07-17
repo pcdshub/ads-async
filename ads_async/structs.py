@@ -706,7 +706,7 @@ class AoERequestHeader(_AdsStructBase):
     length: int
 
     _fields_ = [
-        ('group', ctypes.c_uint32),
+        ('index_group', ctypes.c_uint32),
         ('offset', ctypes.c_uint32),
         ('length', ctypes.c_uint32),
     ]
