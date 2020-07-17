@@ -1,6 +1,5 @@
 import ctypes
 import logging
-import struct
 import typing
 
 from . import constants, log, structs, utils
@@ -419,19 +418,3 @@ class Server:
     @property
     def name(self) -> str:
         return self._name
-
-
-def serialize_data(data_type: constants.AdsDataType, data: typing.Any,
-                   length: int = None,
-                   *, endian='<') -> bytes:
-    length = length if length is not None else len(data)
-    fmt = struct.Struct(f'{endian}{length}{data_type.ctypes_type._type_}')
-    return fmt.size, struct.pack(data)
-
-
-def deserialize_data(data_type: constants.AdsDataType,
-                     length: int,
-                     data: bytes,
-                     *, endian='<') -> typing.Any:
-    fmt = struct.Struct(f'{endian}{length}{data_type.ctypes_type._type_}')
-    return fmt.size, struct.unpack(data)

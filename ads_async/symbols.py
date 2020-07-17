@@ -3,7 +3,7 @@ import enum
 import logging
 import typing
 
-from . import constants
+from . import constants, structs
 from .constants import AdsDataType
 
 try:
@@ -66,7 +66,12 @@ class Symbol:
 
     def write(self, value):
         if not isinstance(value, type(ctypes.c_int)):
-            value = self.ctypes_data_type(value)
+            consumed, value = structs.deserialize_data(
+                data_type=self.data_type, data=value,
+                length=self.array_length,
+            )
+
+        logger.debug('Symbol %s write %s', self, value)
         return self.memory.write(self.offset, bytes(value))
 
     @property

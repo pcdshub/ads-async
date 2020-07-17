@@ -73,9 +73,13 @@ class _AdsStructBase(ctypes.LittleEndianStructure):
 
         cls._all_fields_ = all_fields
         cls._dict_mapping = dict_mapping
-        cls._dict_attrs = [cls._dict_mapping.get(attr, attr)
-                           for attr, *info in cls._all_fields_]
+        cls._dict_attrs = [
+            cls._dict_mapping.get(attr, attr)
+            for attr, *info in cls._all_fields_
+        ]
         cls._dict_attrs.extend([item[0] for item in cls._payload_fields])
+        cls._dict_attrs = [attr for attr in cls._dict_attrs
+                           if not attr.startswith('_')]
 
     def to_dict(self) -> dict:
         """Return the structure as a dictionary."""
@@ -119,6 +123,7 @@ class _AdsStructBase(ctypes.LittleEndianStructure):
             payload_buf = payload_buf[length + padding:]
             if deserialize is not None:
                 value = deserialize(*value)
+            print(attr, 'deserialized', value)
             setattr(new_struct, attr, value)
 
         return new_struct
@@ -953,3 +958,19 @@ class AoENotificationHandleResponse(AoEResponseHeader):
                  ):
         super().__init__(result)
         self.handle = handle
+
+
+def serialize_data(data_type: constants.AdsDataType, data: typing.Any,
+                   length: int = None,
+                   *, endian='<') -> bytes:
+    length = length if length is not None else len(data)
+    st = struct.Struct(f'{endian}{length}{data_type.ctypes_type._type_}')
+    return st.size, st.pack(data)
+
+
+def deserialize_data(data_type: constants.AdsDataType,
+                     length: int,
+                     data: bytes,
+                     *, endian='<') -> typing.Any:
+    st = struct.Struct(f'{endian}{length}{data_type.ctypes_type._type_}')
+    return st.size, st.unpack(data)
