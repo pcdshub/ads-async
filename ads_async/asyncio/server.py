@@ -58,12 +58,16 @@ class AsyncioAcceptedClient:
             logger.exception('handle_command failed with unknown error')
             response = protocol.ErrorResponse(
                 code=constants.AdsError.DEVICE_ERROR,  # TODO
-                reason=str(ex))
+                reason=str(ex),
+                request=item,
+            )
 
         if response is None:
             response = protocol.ErrorResponse(
                 code=constants.AdsError.DEVICE_ERROR,  # TODO
-                reason='unhandled codepath')
+                reason='unhandled codepath',
+                request=item,
+            )
             logger.error('handle_command returned None: %s %s', header, item)
 
         if isinstance(response, protocol.AsynchronousResponse):

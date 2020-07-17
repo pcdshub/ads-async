@@ -48,6 +48,12 @@ def byte_string_to_string(s: bytes) -> str:
     return value.split('\x00')[0]
 
 
+def _serialize(obj):
+    if hasattr(obj, 'serialize'):
+        return obj.serialize()
+    return bytes(obj)
+
+
 class _AdsStructBase(ctypes.LittleEndianStructure):
     # To be overridden by subclasses:
     _command_id: constants.AdsCommandId = constants.AdsCommandId.INVALID
@@ -541,12 +547,15 @@ class AdsSymbolEntry(_AdsStructBase):
         self.type_length = len(self.type_name)
         self.comment_length = len(self.comment)
         self.entry_length = sum((
-            ctypes.sizeof(AdsSymbolEntry),
-            self.name_length,
-            self.type_length,
-            self.comment_length,
-            3,  # uncounted null terminators
+            ctypes.sizeof(self),
+            self.name_length, 1,  # plus null terminator
+            self.type_length, 1,  # plus null terminator
+            self.comment_length, 1,  # plus null terminator
         ))
+
+    def serialize(self) -> bytearray:
+        self._update_lengths()
+        return super().serialize()
 
 
 @use_for_request(constants.AdsCommandId.WRITE)
@@ -567,7 +576,7 @@ class AdsWriteRequest(_AdsStructBase):
     ]
 
     _payload_fields = [
-        ('data', '{self.write_length}s', 0, bytes, bytes),
+        ('data', '{self.write_length}s', 0, bytes, _serialize),
     ]
 
     index_group = _create_enum_property('_index_group',
@@ -618,7 +627,7 @@ class AdsReadWriteRequest(_AdsStructBase):
     ]
 
     _payload_fields = [
-        ('data', '{self.write_length}s', 0, bytes, bytes),
+        ('data', '{self.write_length}s', 0, bytes, _serialize),
     ]
 
     index_group = _create_enum_property('_index_group',
@@ -757,7 +766,7 @@ class AdsWriteControlRequest(_AdsStructBase):
         ('_data_start', ctypes.c_ubyte * 0),
     ]
     _payload_fields = [
-        ('data', '{self.write_length}s', 0, bytes, bytes),
+        ('data', '{self.write_length}s', 0, bytes, _serialize),
     ]
 
     ads_state = _create_enum_property('_ads_state', constants.AdsState)
@@ -894,7 +903,7 @@ class AoEReadResponse(AoEResponseHeader):
     ]
 
     _payload_fields = [
-        ('data', '{self.read_length}s', 0, bytes, bytes),
+        ('data', '{self.read_length}s', 0, bytes, _serialize),
     ]
 
     _dict_mapping = {'_data_start': 'data'}
@@ -909,7 +918,8 @@ class AoEReadResponse(AoEResponseHeader):
         self.data = data
 
     def serialize(self) -> bytearray:
-        self.read_length = len(bytes(self.data))
+        # TODO: double serialization
+        self.read_length = len(_serialize(self.data))
         return super().serialize()
 
 
