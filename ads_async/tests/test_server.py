@@ -1,5 +1,6 @@
 import ctypes
 import logging
+import pathlib
 
 import pytest
 
@@ -7,11 +8,12 @@ import ads_async
 from ads_async import constants, protocol, structs
 
 logger = logging.getLogger(__name__)
+MODULE_PATH = pathlib.Path(__file__).parent
 
 
 @pytest.fixture(scope='module')
 def tmc_filename() -> str:
-    return 'kmono.tmc'
+    return MODULE_PATH / 'kmono.tmc'
 
 
 @pytest.fixture(scope='function')
@@ -86,6 +88,10 @@ def send_request(client: protocol.AcceptedClient,
             header=header, request=item)
         print('Received')
         print('\t', response)
+
+    for item in response:
+        item.serialize()  # smoke test
+
     return response
 
 
@@ -134,4 +140,16 @@ def test_read_and_write_by_handle(
     response, = send_request(client, command=request)
     assert isinstance(response, structs.AoEReadResponse)
 
-    assert response.data == bytes(symbol.ctypes_data_type(1))
+    assert bytes(response.data) == bytes(symbol.ctypes_data_type(1))
+
+
+def test_read_symbol_info_ex(
+        server: protocol.Server, client: protocol.AcceptedClient,
+        symbol: ads_async.symbols.Symbol):
+    request = structs.AdsReadWriteRequest.create_info_by_name_request(
+        symbol.name)
+    response, = send_request(client, command=request)
+    entry = response.data  # TODO: only because this is in the same process...
+    assert isinstance(entry, structs.AdsSymbolEntry)
+    assert entry.name == symbol.name
+    assert entry.type_name == symbol.data_type.name

@@ -58,12 +58,16 @@ class AsyncioAcceptedClient:
             logger.exception('handle_command failed with unknown error')
             response = protocol.ErrorResponse(
                 code=constants.AdsError.DEVICE_ERROR,  # TODO
-                reason=str(ex))
+                reason=str(ex),
+                request=item,
+            )
 
         if response is None:
             response = protocol.ErrorResponse(
                 code=constants.AdsError.DEVICE_ERROR,  # TODO
-                reason='unhandled codepath')
+                reason='unhandled codepath',
+                request=item,
+            )
             logger.error('handle_command returned None: %s %s', header, item)
 
         if isinstance(response, protocol.AsynchronousResponse):
@@ -71,8 +75,12 @@ class AsyncioAcceptedClient:
             await self._queue.async_put(response)
         elif isinstance(response, protocol.ErrorResponse):
             self.log.error('Error response: %r', response)
-            await self.send_response(request_header=header,
-                                     ads_error=response.code,
+            err_cls = structs.get_struct_by_command(
+                response.request.command_id(), request=False)
+            err_response = err_cls(result=response.code)
+            await self.send_response(err_response,
+                                     request_header=header,
+                                     # ads_error=response.code, ?
                                      )
         else:
             await self.send_response(*response, request_header=header)

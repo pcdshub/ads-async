@@ -1,6 +1,5 @@
 import ctypes
 import logging
-import struct
 import typing
 
 from . import constants, log, structs, utils
@@ -82,12 +81,7 @@ def response_to_wire(
         ads_error: AdsError = AdsError.NOERR
         ) -> typing.Tuple[list, bytearray]:
 
-    # TODO: better way around this? would like to bake it into __bytes__
-    items_serialized = [item.serialize()
-                        if hasattr(item, 'serialize')
-                        else bytes(item)
-                        for item in items]
-
+    items_serialized = [structs.serialize(item) for item in items]
     item_length = sum(len(item) for item in items_serialized)
 
     headers = [
@@ -162,7 +156,8 @@ class AcceptedClient:
         except KeyError:
             raise ErrorResponse(
                 code=AdsError.DEVICE_SYMBOLNOTFOUND,
-                reason=f'{symbol_name!r} not in database'
+                reason=f'{symbol_name!r} not in database',
+                request=request,
             ) from None
 
     def _get_symbol_by_request_handle(self, request) -> Symbol:
@@ -170,7 +165,8 @@ class AcceptedClient:
             return self.handle_to_symbol[request.handle]
         except KeyError as ex:
             raise ErrorResponse(code=AdsError.CLIENT_INVALIDPARM,  # TODO?
-                                reason=f'{ex} bad handle') from None
+                                reason=f'{ex} bad handle',
+                                request=request) from None
 
     def _handle_add_notification_request(
             self, header: structs.AoEHeader,
@@ -229,6 +225,18 @@ class AcceptedClient:
 
             return [structs.AoEReadResponse(data=symbol.read())]
 
+        try:
+            data_area = self.server.database.index_groups[request.index_group]
+        except KeyError:
+            raise ErrorResponse(
+                code=AdsError.DEVICE_INVALIDACCESS,  # TODO?
+                reason=f'Invalid index group: {request.index_group}',
+                request=request,
+            ) from None
+        else:
+            data = data_area.memory.read(request.index_offset, request.length)
+            return [structs.AoEReadResponse(data=data)]
+
     def _handle_read_write(self, header: structs.AoEHeader,
                            request: structs.AdsReadWriteRequest):
         if request.index_group == AdsIndexGroup.SYM_HNDBYNAME:
@@ -250,12 +258,38 @@ class AcceptedClient:
                 type_name=symbol.data_type.name,
                 comment=symbol.__doc__ or '',
             )
-            # TODO: double serialization done for length here:
-            return [
-                structs.AoEReadResponseHeader(
-                    read_length=len(symbol_entry.serialize())),
-                symbol_entry
-            ]
+            return [structs.AoEReadResponse(data=symbol_entry)]
+
+        elif request.index_group == AdsIndexGroup.SUMUP_READ:
+            read_size = ctypes.sizeof(structs.AdsReadRequest)
+            count = len(request.data) // read_size
+            self.log.debug('Request to read %d items', count)
+            buf = bytearray(request.data)
+
+            results = []
+            data = []
+            for idx in range(count):
+                read_req = structs.AdsReadRequest.from_buffer(buf)
+                read_response = self._handle_read(header, read_req)
+                self.log.warning('[%d] %s -> %s', idx + 1, read_req,
+                                 read_response)
+                if read_response is not None:
+                    results.append(read_response[0].result)
+                    data.append(read_response[0].data)
+                else:
+                    # TODO (?)
+                    results.append(AdsError.DEVICE_ERROR)
+                    data.append(bytes(read_req.length))
+                buf = buf[read_size:]
+
+            if request.index_offset != 0:
+                to_send = [ctypes.c_uint32(res) for res in results] + data
+            else:
+                to_send = data
+
+            return [structs.AoEReadResponse(
+                data=b''.join(structs.serialize(res) for res in to_send)
+            )]
 
         # return AsynchronousResponse(header, request, self)
 
@@ -317,7 +351,7 @@ class AcceptedClient:
             'bytesize': len(bytes_to_send),
         }
         for idx, item in enumerate(items, 1):
-            extra['counter'] = (idx, len(items) + 1)
+            extra['counter'] = (idx, len(items))
             self.log.debug('%s', item, extra=extra)
 
         return bytes_to_send
@@ -327,9 +361,11 @@ class ErrorResponse(Exception):
     code: AdsError
     reason: str
 
-    def __init__(self, reason: str, code: AdsError):
+    def __init__(self, reason: str, code: AdsError,
+                 request: structs._AdsStructBase):
         super().__init__(reason)
         self.code = code
+        self.request = request
 
     def __repr__(self):
         return f'<ErrorResponse {self.code} ({self})>'
@@ -387,19 +423,3 @@ class Server:
     @property
     def name(self) -> str:
         return self._name
-
-
-def serialize_data(data_type: constants.AdsDataType, data: typing.Any,
-                   length: int = None,
-                   *, endian='<') -> bytes:
-    length = length if length is not None else len(data)
-    fmt = struct.Struct(f'{endian}{length}{data_type.ctypes_type._type_}')
-    return fmt.size, struct.pack(data)
-
-
-def deserialize_data(data_type: constants.AdsDataType,
-                     length: int,
-                     data: bytes,
-                     *, endian='<') -> typing.Any:
-    fmt = struct.Struct(f'{endian}{length}{data_type.ctypes_type._type_}')
-    return fmt.size, struct.unpack(data)

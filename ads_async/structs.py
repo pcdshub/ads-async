@@ -48,6 +48,13 @@ def byte_string_to_string(s: bytes) -> str:
     return value.split('\x00')[0]
 
 
+def serialize(obj):
+    # TODO: better way around this? would like to bake it into __bytes__
+    if hasattr(obj, 'serialize'):
+        return obj.serialize()
+    return bytes(obj)
+
+
 class _AdsStructBase(ctypes.LittleEndianStructure):
     # To be overridden by subclasses:
     _command_id: constants.AdsCommandId = constants.AdsCommandId.INVALID
@@ -56,10 +63,24 @@ class _AdsStructBase(ctypes.LittleEndianStructure):
     _dict_mapping = {}
     _payload_fields = []
 
-    @property
-    def _dict_attrs(self):
-        for attr, *info in self._fields_:
-            yield self._dict_mapping.get(attr, attr)
+    def __init_subclass__(cls):
+        super().__init_subclass__()
+
+        dict_mapping = {}
+        all_fields = []
+        for base in reversed(cls.mro()):
+            all_fields.extend(getattr(base, '_fields_', []))
+            dict_mapping.update(getattr(base, '_dict_mapping', {}))
+
+        cls._all_fields_ = all_fields
+        cls._dict_mapping = dict_mapping
+        cls._dict_attrs = [
+            cls._dict_mapping.get(attr, attr)
+            for attr, *info in cls._all_fields_
+        ]
+        cls._dict_attrs.extend([item[0] for item in cls._payload_fields])
+        cls._dict_attrs = [attr for attr in cls._dict_attrs
+                           if not attr.startswith('_')]
 
     def to_dict(self) -> dict:
         """Return the structure as a dictionary."""
@@ -67,10 +88,6 @@ class _AdsStructBase(ctypes.LittleEndianStructure):
         #  {'raw_attr': 'property_attr'}
         return {attr: getattr(self, attr)
                 for attr in self._dict_attrs}
-
-    @property
-    def serialized_length(self) -> int:
-        return ctypes.sizeof(self)
 
     def __repr__(self):
         formatted_args = ", ".join(f"{k!s}={v!r}"
@@ -485,7 +502,6 @@ class AdsSymbolEntry(_AdsStructBase):
     _dict_mapping = {'_flags': 'flags',
                      '_data_type': 'data_type',
                      '_index_group': 'index_group',
-                     '_data_start': '_payload',
                      }
 
     def __init__(self,
@@ -503,12 +519,6 @@ class AdsSymbolEntry(_AdsStructBase):
         self._type_name = type_name
         self._comment = comment
         self._update_lengths()
-
-    @property
-    def _payload(self):
-        return dict(name=self.name,
-                    type_name=self.type_name,
-                    comment=self.comment)
 
     @property
     def name(self) -> str:
@@ -542,12 +552,15 @@ class AdsSymbolEntry(_AdsStructBase):
         self.type_length = len(self.type_name)
         self.comment_length = len(self.comment)
         self.entry_length = sum((
-            ctypes.sizeof(AdsSymbolEntry),
-            self.name_length,
-            self.type_length,
-            self.comment_length,
-            3,  # uncounted null terminators
+            ctypes.sizeof(self),
+            self.name_length, 1,  # plus null terminator
+            self.type_length, 1,  # plus null terminator
+            self.comment_length, 1,  # plus null terminator
         ))
+
+    def serialize(self) -> bytearray:
+        self._update_lengths()
+        return super().serialize()
 
 
 @use_for_request(constants.AdsCommandId.WRITE)
@@ -568,14 +581,13 @@ class AdsWriteRequest(_AdsStructBase):
     ]
 
     _payload_fields = [
-        ('data', '{self.write_length}s', 1, bytes, bytes),
+        ('data', '{self.write_length}s', 0, bytes, serialize),
     ]
 
     index_group = _create_enum_property('_index_group',
                                         constants.AdsIndexGroup,
                                         strict=False)
-    _dict_mapping = {'_data_start': 'data',
-                     '_index_group': 'index_group'}
+    _dict_mapping = {'_index_group': 'index_group'}
 
     def __init__(self, index_group: constants.AdsIndexGroup,
                  index_offset: int, data: typing.Any = None):
@@ -620,14 +632,13 @@ class AdsReadWriteRequest(_AdsStructBase):
     ]
 
     _payload_fields = [
-        ('data', '{self.write_length}s', 1, bytes, bytes),
+        ('data', '{self.write_length}s', 0, bytes, serialize),
     ]
 
     index_group = _create_enum_property('_index_group',
                                         constants.AdsIndexGroup,
                                         strict=False)
-    _dict_mapping = {'_data_start': 'data',
-                     '_index_group': 'index_group'}
+    _dict_mapping = {'_index_group': 'index_group'}
 
     @classmethod
     def create_handle_by_name_request(cls, name: str) -> 'AdsReadWriteRequest':
@@ -635,6 +646,18 @@ class AdsReadWriteRequest(_AdsStructBase):
         request = cls(constants.AdsIndexGroup.SYM_HNDBYNAME,
                       0, ctypes.sizeof(ctypes.c_uint32),
                       len(data))
+        request.data = data
+        return request
+
+    @classmethod
+    def create_info_by_name_request(cls, name: str) -> 'AdsReadWriteRequest':
+        # Read length includes up to 3 T_MaxString strings:
+        read_length = ctypes.sizeof(AdsSymbolEntry) + 3 * 256
+
+        data = string_to_byte_string(name) + b'\x00'
+        write_length = len(data)
+        request = cls(constants.AdsIndexGroup.SYM_INFOBYNAMEEX, 0, read_length,
+                      write_length)
         request.data = data
         return request
 
@@ -748,7 +771,7 @@ class AdsWriteControlRequest(_AdsStructBase):
         ('_data_start', ctypes.c_ubyte * 0),
     ]
     _payload_fields = [
-        ('data', '{self.write_length}s', 1, bytes, bytes),
+        ('data', '{self.write_length}s', 0, bytes, serialize),
     ]
 
     ads_state = _create_enum_property('_ads_state', constants.AdsState)
@@ -859,6 +882,11 @@ class AoEHeader(_AdsStructBase):
                      '_state_flags': 'state_flags'}
 
 
+@use_for_response(constants.AdsCommandId.WRITE_CONTROL)
+@use_for_response(constants.AdsCommandId.INVALID)
+@use_for_response(constants.AdsCommandId.DEL_DEVICE_NOTIFICATION)
+@use_for_response(constants.AdsCommandId.WRITE)
+# @use_for_response(constants.AdsCommandId.DEVICE_NOTIFICATION)
 class AoEResponseHeader(_AdsStructBase):
     _fields_ = [
         ('_result', ctypes.c_uint32),
@@ -867,7 +895,11 @@ class AoEResponseHeader(_AdsStructBase):
     result = _create_enum_property('_result', constants.AdsError)
     _dict_mapping = {'_result': 'result'}
 
+    def __init__(self, result: constants.AdsError = constants.AdsError.NOERR):
+        super().__init__(result)
 
+
+@use_for_response(constants.AdsCommandId.READ)
 class AoEReadResponse(AoEResponseHeader):
     _fields_ = [
         # Inherits 'result' from AoEResponseHeader
@@ -876,7 +908,7 @@ class AoEReadResponse(AoEResponseHeader):
     ]
 
     _payload_fields = [
-        ('data', '{self.read_length}s', 1, bytes, bytes),
+        ('data', '{self.read_length}s', 0, bytes, serialize),
     ]
 
     _dict_mapping = {'_data_start': 'data'}
@@ -886,16 +918,17 @@ class AoEReadResponse(AoEResponseHeader):
                  length: int = 0,
                  data: typing.Any = None,
                  ):
-        if data is not None:
-            data = bytes(data)
-            length = len(data)
-        else:
-            data = None
-
-        super().__init__(result, length)
+        super().__init__(result=result)
+        self.read_length = length
         self.data = data
 
+    def serialize(self) -> bytearray:
+        # TODO: double serialization
+        self.read_length = len(serialize(self.data))
+        return super().serialize()
 
+
+@use_for_response(constants.AdsCommandId.READ_WRITE)
 class AoEHandleResponse(AoEResponseHeader):
     _fields_ = [
         # Inherits 'result' from AoEResponseHeader
@@ -905,13 +938,14 @@ class AoEHandleResponse(AoEResponseHeader):
 
     def __init__(self, *,
                  result: constants.AdsError = constants.AdsError.NOERR,
-                 handle: int,
+                 handle: int = 0,
                  ):
         super().__init__(result)
         self.length = ctypes.sizeof(ctypes.c_uint32)
         self.handle = handle
 
 
+@use_for_response(constants.AdsCommandId.ADD_DEVICE_NOTIFICATION)
 class AoENotificationHandleResponse(AoEResponseHeader):
     _fields_ = [
         # Inherits 'result' from AoEResponseHeader
@@ -920,7 +954,23 @@ class AoENotificationHandleResponse(AoEResponseHeader):
 
     def __init__(self, *,
                  result: constants.AdsError = constants.AdsError.NOERR,
-                 handle: int,
+                 handle: int = 0,
                  ):
         super().__init__(result)
         self.handle = handle
+
+
+def serialize_data(data_type: constants.AdsDataType, data: typing.Any,
+                   length: int = None,
+                   *, endian='<') -> bytes:
+    length = length if length is not None else len(data)
+    st = struct.Struct(f'{endian}{length}{data_type.ctypes_type._type_}')
+    return st.size, st.pack(data)
+
+
+def deserialize_data(data_type: constants.AdsDataType,
+                     length: int,
+                     data: bytes,
+                     *, endian='<') -> typing.Any:
+    st = struct.Struct(f'{endian}{length}{data_type.ctypes_type._type_}')
+    return st.size, st.unpack(data)

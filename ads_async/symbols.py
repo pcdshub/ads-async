@@ -3,7 +3,7 @@ import enum
 import logging
 import typing
 
-from . import constants
+from . import constants, structs
 from .constants import AdsDataType
 
 try:
@@ -65,8 +65,16 @@ class Symbol:
         return self.ctypes_data_type.from_buffer(raw)
 
     def write(self, value):
-        if not isinstance(value, type(ctypes.c_int)):
-            value = self.ctypes_data_type(value)
+        if not isinstance(value, ctypes._SimpleCData):
+            if isinstance(value, bytes):
+                consumed, value = structs.deserialize_data(
+                    data_type=self.data_type, data=value,
+                    length=self.array_length,
+                )
+            else:
+                value = self.ctypes_data_type(value)
+
+        logger.debug('Symbol %s write %s', self, value)
         return self.memory.write(self.offset, bytes(value))
 
     @property
@@ -81,26 +89,20 @@ class Symbol:
 
 
 class DataArea:
+    memory: PlcMemory
     index_group: constants.AdsIndexGroup = None
     symbols: typing.Mapping[str, Symbol]
     area_type: str
-
-    def __init__(self, index_group: constants.AdsIndexGroup,
-                 area_type: str = ''):
-        self.index_group = index_group
-        self.area_type = area_type
-        self.symbols = {}
-
-
-class TmcDataArea(DataArea):
-    memory: PlcMemory
 
     def __init__(self, index_group: constants.AdsIndexGroup,
                  area_type: str,
                  *,
                  memory: PlcMemory = None,
                  memory_size=None):
-        super().__init__(index_group, area_type)
+
+        self.index_group = index_group
+        self.area_type = area_type
+        self.symbols = {}
 
         if memory is not None:
             self.memory = memory
@@ -109,6 +111,8 @@ class TmcDataArea(DataArea):
         else:
             raise ValueError('Must specify either memory or memory_size')
 
+
+class TmcDataArea(DataArea):
     def add_symbol(self, tmc_symbol):
         info = tmc_symbol.info
         bit_offset = int(info['bit_offs'])
@@ -244,8 +248,22 @@ class TmcDatabase(Database):
 
             index_group = DataAreaIndexGroup[area_type]
             area = TmcDataArea(index_group, area_type, memory_size=byte_size)
-            self.data_areas.append(area)
-            self.index_groups[index_group] = area
+            self.add_data_area(index_group, area)
 
             for sym in tmc_area.find(pytmc.parser.Symbol):
                 area.add_symbol(sym)
+
+        self._configure_plc_memory_area()
+
+    def add_data_area(self, index_group: constants.AdsIndexGroup,
+                      area: DataArea):
+        self.data_areas.append(area)
+        self.index_groups[index_group] = area
+
+    def _configure_plc_memory_area(self):
+        if constants.AdsIndexGroup.PLC_MEMORY_AREA in self.index_groups:
+            return
+
+        index_group = constants.AdsIndexGroup.PLC_MEMORY_AREA
+        area = DataArea(index_group, 'PLC_MEMORY_AREA', memory_size=100_000)
+        self.add_data_area(index_group, area)
