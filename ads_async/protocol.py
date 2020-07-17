@@ -347,7 +347,7 @@ class AcceptedClient:
             'bytesize': len(bytes_to_send),
         }
         for idx, item in enumerate(items, 1):
-            extra['counter'] = (idx, len(items) + 1)
+            extra['counter'] = (idx, len(items))
             self.log.debug('%s', item, extra=extra)
 
         return bytes_to_send

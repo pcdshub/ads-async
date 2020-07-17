@@ -59,11 +59,14 @@ class _AdsStructBase(ctypes.LittleEndianStructure):
     def __init_subclass__(cls):
         super().__init_subclass__()
 
+        dict_mapping = {}
         all_fields = []
         for base in reversed(cls.mro()):
             all_fields.extend(getattr(base, '_fields_', []))
+            dict_mapping.update(getattr(base, '_dict_mapping', {}))
 
         cls._all_fields_ = all_fields
+        cls._dict_mapping = dict_mapping
         cls._dict_attrs = [cls._dict_mapping.get(attr, attr)
                            for attr, *info in cls._all_fields_]
         cls._dict_attrs.extend([item[0] for item in cls._payload_fields])
