@@ -229,6 +229,17 @@ class AcceptedClient:
 
             return [structs.AoEReadResponse(data=symbol.read())]
 
+        try:
+            data_area = self.server.database.index_groups[request.index_group]
+        except KeyError:
+            raise ErrorResponse(
+                code=AdsError.DEVICE_INVALIDACCESS,  # TODO?
+                reason=f'Invalid index group: {request.index_group}'
+            ) from None
+        else:
+            data = data_area.memory.read(request.index_offset, request.length)
+            return [structs.AoEReadResponse(data=data)]
+
     def _handle_read_write(self, header: structs.AoEHeader,
                            request: structs.AdsReadWriteRequest):
         if request.index_group == AdsIndexGroup.SYM_HNDBYNAME:
@@ -251,6 +262,27 @@ class AcceptedClient:
                 comment=symbol.__doc__ or '',
             )
             return [structs.AoEReadResponse(data=symbol_entry)]
+
+        elif request.index_group == AdsIndexGroup.SUMUP_READ:
+            read_size = ctypes.sizeof(structs.AdsReadRequest)
+            count = len(request.data) // read_size
+            self.log.debug('Request to read %d items', count)
+            buf = bytearray(request.data)
+
+            results = []
+            for idx in range(count):
+                read_req = structs.AdsReadRequest.from_buffer(buf)
+                read_response = self._handle_read(header, read_req)
+                self.log.debug('[%d] %s -> %s', idx + 1, read_req,
+                               read_response)
+                if read_response is not None:
+                    results.append(read_response[0].data)
+                else:
+                    results.append(bytes(read_req.length))  # TODO (?)
+                buf = buf[read_size:]
+
+            data = b''.join(bytes(res) for res in results)
+            return [structs.AoEReadResponse(data=data)]
 
         # return AsynchronousResponse(header, request, self)
 
