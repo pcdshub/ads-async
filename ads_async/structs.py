@@ -9,9 +9,12 @@ from . import constants
 from .constants import AoEHeaderFlag
 
 _commands = {}
+T_AdsStructure = typing.TypeVar('T_AdsStructure', bound='_AdsStructBase')
 
 
-def _use_for(key: str, command_id: constants.AdsCommandId, cls: type) -> type:
+def _use_for(key: str, command_id: constants.AdsCommandId,
+             cls: T_AdsStructure) -> T_AdsStructure:
+    """A decorator that populates the `_commands` dictionary by command ID."""
     if command_id not in _commands:
         _commands[command_id] = {}
 
@@ -34,21 +37,50 @@ def use_for_request(command_id: constants.AdsCommandId):
     return functools.partial(_use_for, 'request', command_id)
 
 
-def get_struct_by_command(command_id: constants.AdsCommandId, request: bool):
+def get_struct_by_command(command_id: constants.AdsCommandId,
+                          request: bool) -> T_AdsStructure:
+    """
+    Get a structure class given the AdsCommandId.
+
+    Parameters
+    ----------
+    command_id : AdsCommandId
+        The command ID.
+
+    request : bool
+        Request (True) or response (False).
+
+    Returns
+    -------
+    struct : _AdsStructBase
+        The structure class.
+    """
+
     key = 'request' if request else 'response'
     return _commands[command_id][key]
 
 
 def string_to_byte_string(s: str) -> bytes:
+    """Encode a string using the configured string encoding."""
     return bytes(s, constants.ADS_ASYNC_STRING_ENCODING)
 
 
 def byte_string_to_string(s: bytes) -> str:
+    """Decode a string using the configured string encoding."""
     value = str(s, constants.ADS_ASYNC_STRING_ENCODING)
     return value.split('\x00')[0]
 
 
-def serialize(obj):
+def serialize(
+        obj: typing.Union[T_AdsStructure, bytes, ctypes._SimpleCData]
+        ) -> bytes:
+    """
+    Serialize a given item.
+
+    Returns
+    -------
+    serialized : bytes
+    """
     # TODO: better way around this? would like to bake it into __bytes__
     if hasattr(obj, 'serialize'):
         return obj.serialize()
@@ -56,6 +88,15 @@ def serialize(obj):
 
 
 class _AdsStructBase(ctypes.LittleEndianStructure):
+    """
+    A base structure for the rest in :mod:`ads_async.structs`.
+
+    Handles:
+        - Special reprs by way of `to_dict` (and `_dict_mapping`).
+        - Payload serialization / deserialization by way of `_payload_fields`
+          and `from_buffer_extended`.
+        - Removing alignment by way of _pack_
+    """
     # To be overridden by subclasses:
     _command_id: constants.AdsCommandId = constants.AdsCommandId.INVALID
 
@@ -95,6 +136,7 @@ class _AdsStructBase(ctypes.LittleEndianStructure):
         return f"{self.__class__.__name__}({formatted_args})"
 
     def serialize(self) -> bytearray:
+        """Serialize the structure and payload."""
         packed = bytearray(self)
 
         for attr, fmt, padding, _, serialize in self._payload_fields:
@@ -108,7 +150,20 @@ class _AdsStructBase(ctypes.LittleEndianStructure):
         return packed
 
     @classmethod
-    def from_buffer_extended(cls, buf):
+    def from_buffer_extended(cls: typing.Type[T_AdsStructure],
+                             buf: bytearray) -> T_AdsStructure:
+        """
+        Deserialize data from `buf` into a structure + payload.
+
+        Parameters
+        ----------
+        buf : bytearray
+            The byte buffer.
+
+        Returns
+        -------
+        T_AdsStructure
+        """
         # TODO: this is a workaround to not being able to override
         # `from_buffer`
         if not cls._payload_fields:
@@ -228,7 +283,8 @@ class AmsNetId(_AdsStructBase):
         return '.'.join(str(c) for c in self.octets)
 
     @classmethod
-    def from_ipv4(cls, ip: typing.Union[str, ipaddress.IPv4Address],
+    def from_ipv4(cls: typing.Type[T_AdsStructure],
+                  ip: typing.Union[str, ipaddress.IPv4Address],
                   octet5: int = 1,
                   octet6: int = 1) -> 'AmsNetId':
         """
@@ -255,7 +311,8 @@ class AmsNetId(_AdsStructBase):
         return cls(tuple(ip.packed) + (octet5, octet6))
 
     @classmethod
-    def from_string(cls, addr: str) -> 'AmsNetId':
+    def from_string(cls: typing.Type[T_AdsStructure],
+                    addr: str) -> 'AmsNetId':
         """
         Create an AMS Net ID based on an AMS ID string.
 
