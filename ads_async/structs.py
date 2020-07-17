@@ -10,6 +10,7 @@ from .constants import AoEHeaderFlag
 
 _commands = {}
 T_AdsStructure = typing.TypeVar('T_AdsStructure', bound='_AdsStructBase')
+T_Serializable = typing.Union[T_AdsStructure, bytes, ctypes._SimpleCData]
 
 
 def _use_for(key: str, command_id: constants.AdsCommandId,
@@ -71,9 +72,7 @@ def byte_string_to_string(s: bytes) -> str:
     return value.split('\x00')[0]
 
 
-def serialize(
-        obj: typing.Union[T_AdsStructure, bytes, ctypes._SimpleCData]
-        ) -> bytes:
+def serialize(obj: T_Serializable) -> bytes:
     """
     Serialize a given item.
 
@@ -189,11 +188,13 @@ class _AdsStructBase(ctypes.LittleEndianStructure):
         return cls._command_id
 
 
-def _create_enum_property(field_name: str,
-                          enum_cls: enum.Enum,
-                          *,
-                          doc: str = None,
-                          strict: bool = True):
+def _create_enum_property(
+        field_name: str,
+        enum_cls: typing.Type[enum.Enum],
+        *,
+        doc: str = None,
+        strict: bool = True
+        ) -> property:
     """
     Create a property which makes a field value into an enum value.
 
@@ -516,9 +517,6 @@ class AdsSymbolEntry(_AdsStructBase):
     _name: str = ''
     _type_name: str = ''
     _comment: str = ''
-    name: str
-    type_name: str
-    comment: str
 
     _fields_ = [
         # length of complete symbol entry

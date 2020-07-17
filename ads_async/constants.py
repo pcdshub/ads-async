@@ -1,6 +1,7 @@
 import ctypes
 import enum
 import os
+import typing
 
 ADS_TCP_SERVER_PORT = 0xBF02
 ADS_ASYNC_STRING_ENCODING = os.environ.get('ADS_ASYNC_STRING_ENCODING',
@@ -344,8 +345,11 @@ class AdsDataType(enum.IntEnum):
     BIT = 33
     MAXTYPES = 34
 
+    to_ctypes: typing.Mapping['AdsDataType', typing.Type[ctypes._SimpleCData]]
+
     @property
-    def ctypes_type(self):
+    def ctypes_type(self) -> typing.Type[ctypes._SimpleCData]:
+        """Get the ctypes _SimpleCData type associated with the data type."""
         return self.to_ctypes[self]
 
 

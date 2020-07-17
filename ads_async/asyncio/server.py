@@ -1,8 +1,9 @@
 import asyncio
 import functools
 import logging
+import typing
 
-from .. import constants, protocol, structs, symbols
+from .. import constants, log, protocol, structs, symbols
 from . import utils
 
 logger = logging.getLogger(__name__)
@@ -11,7 +12,7 @@ logger = logging.getLogger(__name__)
 class AsyncioAcceptedClient:
     server: 'AsyncioServer'
     client: protocol.AcceptedClient
-    log: logging.Logger
+    log: log.ComposableLogAdapter
     reader: asyncio.StreamReader
     writer: asyncio.StreamWriter
 
@@ -75,8 +76,10 @@ class AsyncioAcceptedClient:
             await self._queue.async_put(response)
         elif isinstance(response, protocol.ErrorResponse):
             self.log.error('Error response: %r', response)
+
             err_cls = structs.get_struct_by_command(
-                response.request.command_id(), request=False)
+                response.request.command_id(),
+                request=False)  # type: typing.Type[structs._AdsStructBase]
             err_response = err_cls(result=response.code)
             await self.send_response(err_response,
                                      request_header=header,

@@ -100,7 +100,7 @@ def from_wire(
 
 
 def response_to_wire(
-        *items: typing.Union[structs._AdsStructBase, bytes],
+        *items: structs.T_Serializable,
         request_header: structs.AoEHeader,
         ads_error: AdsError = AdsError.NOERR
         ) -> typing.Tuple[list, bytearray]:
@@ -187,6 +187,8 @@ class AcceptedClient:
 
     _handle_counter: utils.ThreadsafeCounter
     _notification_counter: utils.ThreadsafeCounter
+    _handlers: typing.Mapping[typing.Tuple[AdsCommandId, AdsIndexGroup],
+                              typing.Callable]
     address: typing.Tuple[str, int]
     handle_to_notification: dict
     handle_to_symbol: dict
@@ -461,11 +463,10 @@ class AcceptedClient:
             self.recv_buffer = self.recv_buffer[consumed:]
             yield item
 
-    def response_to_wire(
-            self, *items: typing.Union[structs._AdsStructBase, bytes],
-            request_header: structs.AoEHeader,
-            ads_error: AdsError = AdsError.NOERR
-            ) -> bytearray:
+    def response_to_wire(self, *items: structs.T_Serializable,
+                         request_header: structs.AoEHeader,
+                         ads_error: AdsError = AdsError.NOERR
+                         ) -> bytearray:
         """
         Prepare `items` to be sent over the wire.
 
@@ -505,7 +506,12 @@ class AcceptedClient:
         return bytes_to_send
 
 
-def _aggregate_handlers(cls: type) -> dict:
+def _aggregate_handlers(
+        cls: type
+        ) -> typing.Generator[typing.Tuple[typing.Tuple[AdsCommandId,
+                                                        AdsIndexGroup],
+                                           typing.Callable],
+                              None, None]:
     """
     Aggregate the `_handlers` dictionary, for use in
     `AcceptedClient.handle_command`.
