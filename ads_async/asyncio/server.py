@@ -71,8 +71,12 @@ class AsyncioAcceptedClient:
             await self._queue.async_put(response)
         elif isinstance(response, protocol.ErrorResponse):
             self.log.error('Error response: %r', response)
-            await self.send_response(request_header=header,
-                                     ads_error=response.code,
+            err_cls = structs.get_struct_by_command(
+                response.request.command_id(), request=False)
+            err_response = err_cls(result=response.code)
+            await self.send_response(err_response,
+                                     request_header=header,
+                                     # ads_error=response.code, ?
                                      )
         else:
             await self.send_response(*response, request_header=header)

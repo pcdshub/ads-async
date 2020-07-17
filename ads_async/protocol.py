@@ -162,7 +162,8 @@ class AcceptedClient:
         except KeyError:
             raise ErrorResponse(
                 code=AdsError.DEVICE_SYMBOLNOTFOUND,
-                reason=f'{symbol_name!r} not in database'
+                reason=f'{symbol_name!r} not in database',
+                request=request,
             ) from None
 
     def _get_symbol_by_request_handle(self, request) -> Symbol:
@@ -170,7 +171,8 @@ class AcceptedClient:
             return self.handle_to_symbol[request.handle]
         except KeyError as ex:
             raise ErrorResponse(code=AdsError.CLIENT_INVALIDPARM,  # TODO?
-                                reason=f'{ex} bad handle') from None
+                                reason=f'{ex} bad handle',
+                                request=request) from None
 
     def _handle_add_notification_request(
             self, header: structs.AoEHeader,
@@ -234,7 +236,8 @@ class AcceptedClient:
         except KeyError:
             raise ErrorResponse(
                 code=AdsError.DEVICE_INVALIDACCESS,  # TODO?
-                reason=f'Invalid index group: {request.index_group}'
+                reason=f'Invalid index group: {request.index_group}',
+                request=request,
             ) from None
         else:
             data = data_area.memory.read(request.index_offset, request.length)
@@ -354,9 +357,11 @@ class ErrorResponse(Exception):
     code: AdsError
     reason: str
 
-    def __init__(self, reason: str, code: AdsError):
+    def __init__(self, reason: str, code: AdsError,
+                 request: structs._AdsStructBase):
         super().__init__(reason)
         self.code = code
+        self.request = request
 
     def __repr__(self):
         return f'<ErrorResponse {self.code} ({self})>'

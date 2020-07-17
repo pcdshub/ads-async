@@ -56,10 +56,17 @@ class _AdsStructBase(ctypes.LittleEndianStructure):
     _dict_mapping = {}
     _payload_fields = []
 
-    @property
-    def _dict_attrs(self):
-        for attr, *info in self._fields_:
-            yield self._dict_mapping.get(attr, attr)
+    def __init_subclass__(cls):
+        super().__init_subclass__()
+
+        all_fields = []
+        for base in reversed(cls.mro()):
+            all_fields.extend(getattr(base, '_fields_', []))
+
+        cls._all_fields_ = all_fields
+        cls._dict_attrs = [cls._dict_mapping.get(attr, attr)
+                           for attr, *info in cls._all_fields_]
+        cls._dict_attrs.extend([item[0] for item in cls._payload_fields])
 
     def to_dict(self) -> dict:
         """Return the structure as a dictionary."""
@@ -485,7 +492,6 @@ class AdsSymbolEntry(_AdsStructBase):
     _dict_mapping = {'_flags': 'flags',
                      '_data_type': 'data_type',
                      '_index_group': 'index_group',
-                     '_data_start': '_payload',
                      }
 
     def __init__(self,
@@ -503,12 +509,6 @@ class AdsSymbolEntry(_AdsStructBase):
         self._type_name = type_name
         self._comment = comment
         self._update_lengths()
-
-    @property
-    def _payload(self):
-        return dict(name=self.name,
-                    type_name=self.type_name,
-                    comment=self.comment)
 
     @property
     def name(self) -> str:
@@ -574,8 +574,7 @@ class AdsWriteRequest(_AdsStructBase):
     index_group = _create_enum_property('_index_group',
                                         constants.AdsIndexGroup,
                                         strict=False)
-    _dict_mapping = {'_data_start': 'data',
-                     '_index_group': 'index_group'}
+    _dict_mapping = {'_index_group': 'index_group'}
 
     def __init__(self, index_group: constants.AdsIndexGroup,
                  index_offset: int, data: typing.Any = None):
@@ -626,8 +625,7 @@ class AdsReadWriteRequest(_AdsStructBase):
     index_group = _create_enum_property('_index_group',
                                         constants.AdsIndexGroup,
                                         strict=False)
-    _dict_mapping = {'_data_start': 'data',
-                     '_index_group': 'index_group'}
+    _dict_mapping = {'_index_group': 'index_group'}
 
     @classmethod
     def create_handle_by_name_request(cls, name: str) -> 'AdsReadWriteRequest':
@@ -871,6 +869,11 @@ class AoEHeader(_AdsStructBase):
                      '_state_flags': 'state_flags'}
 
 
+@use_for_response(constants.AdsCommandId.WRITE_CONTROL)
+@use_for_response(constants.AdsCommandId.INVALID)
+@use_for_response(constants.AdsCommandId.DEL_DEVICE_NOTIFICATION)
+@use_for_response(constants.AdsCommandId.WRITE)
+# @use_for_response(constants.AdsCommandId.DEVICE_NOTIFICATION)
 class AoEResponseHeader(_AdsStructBase):
     _fields_ = [
         ('_result', ctypes.c_uint32),
@@ -879,7 +882,11 @@ class AoEResponseHeader(_AdsStructBase):
     result = _create_enum_property('_result', constants.AdsError)
     _dict_mapping = {'_result': 'result'}
 
+    def __init__(self, result: constants.AdsError = constants.AdsError.NOERR):
+        super().__init__(result)
 
+
+@use_for_response(constants.AdsCommandId.READ)
 class AoEReadResponse(AoEResponseHeader):
     _fields_ = [
         # Inherits 'result' from AoEResponseHeader
@@ -898,7 +905,8 @@ class AoEReadResponse(AoEResponseHeader):
                  length: int = 0,
                  data: typing.Any = None,
                  ):
-        super().__init__(result, length)
+        super().__init__(result=result)
+        self.read_length = length
         self.data = data
 
     def serialize(self) -> bytearray:
@@ -906,6 +914,7 @@ class AoEReadResponse(AoEResponseHeader):
         return super().serialize()
 
 
+@use_for_response(constants.AdsCommandId.READ_WRITE)
 class AoEHandleResponse(AoEResponseHeader):
     _fields_ = [
         # Inherits 'result' from AoEResponseHeader
@@ -915,13 +924,14 @@ class AoEHandleResponse(AoEResponseHeader):
 
     def __init__(self, *,
                  result: constants.AdsError = constants.AdsError.NOERR,
-                 handle: int,
+                 handle: int = 0,
                  ):
         super().__init__(result)
         self.length = ctypes.sizeof(ctypes.c_uint32)
         self.handle = handle
 
 
+@use_for_response(constants.AdsCommandId.ADD_DEVICE_NOTIFICATION)
 class AoENotificationHandleResponse(AoEResponseHeader):
     _fields_ = [
         # Inherits 'result' from AoEResponseHeader
@@ -930,7 +940,7 @@ class AoENotificationHandleResponse(AoEResponseHeader):
 
     def __init__(self, *,
                  result: constants.AdsError = constants.AdsError.NOERR,
-                 handle: int,
+                 handle: int = 0,
                  ):
         super().__init__(result)
         self.handle = handle
