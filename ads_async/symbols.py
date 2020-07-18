@@ -35,8 +35,8 @@ class Symbol:
     name: str
     data_type: AdsDataType
     data_area: 'DataArea'
-    ctypes_data_type: typing.Type[
-        typing.Union[ctypes.Array[ctypes._SimpleCData], ctypes._SimpleCData]]
+    ctypes_data_type: typing.Union[typing.Type[ctypes.Array],
+                                   typing.Type[ctypes._SimpleCData]]
     size: int
     array_length: int
 
