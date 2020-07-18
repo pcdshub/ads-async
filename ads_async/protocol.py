@@ -343,8 +343,9 @@ class AcceptedClient:
     def _read_write_info(self, header: structs.AoEHeader,
                          request: structs.AdsReadWriteRequest):
         symbol = self._get_symbol_by_request_name(request)
+        index_group = symbol.data_area.index_group.value  # TODO
         symbol_entry = structs.AdsSymbolEntry(
-            index_group=symbol.data_area.index_group.value,  # TODO
+            index_group=index_group,  # type: ignore
             index_offset=symbol.offset,
             size=symbol.size,
             data_type=symbol.data_type,
@@ -439,7 +440,8 @@ class AcceptedClient:
                        extra={'sequence': header.invoke_id})
 
         if hasattr(request, 'index_group'):
-            keys = [(command, request.index_group), (command, None)]
+            keys = [(command, request.index_group),  # type: ignore
+                    (command, None)]
         else:
             keys = [(command, None)]
 

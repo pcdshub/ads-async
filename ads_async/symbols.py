@@ -35,7 +35,8 @@ class Symbol:
     name: str
     data_type: AdsDataType
     data_area: 'DataArea'
-    ctypes_data_type: type(ctypes.c_uint8)
+    ctypes_data_type: typing.Type[
+        typing.Union[ctypes.Array[ctypes._SimpleCData], ctypes._SimpleCData]]
     size: int
     array_length: int
 
@@ -54,7 +55,7 @@ class Symbol:
 
         ctypes_base_type = self.data_type.ctypes_type
         if array_length > 1:
-            self.ctypes_data_type = (array_length * ctypes_base_type)
+            self.ctypes_data_type = array_length * ctypes_base_type
         else:
             self.ctypes_data_type = ctypes_base_type
         self.size = ctypes.sizeof(self.ctypes_data_type)
@@ -204,14 +205,15 @@ class DataAreaIndexGroup(enum.Enum):
 
 
 class Database:
+    data_areas: typing.List[DataArea]
+    index_groups: typing.Mapping[constants.AdsIndexGroup, DataArea]
+
     def get_symbol_by_name(self, symbol_name) -> Symbol:
         raise KeyError(symbol_name)
 
 
 class TmcDatabase(Database):
     tmc: 'pytmc.parser.TcModuleClass'
-    data_areas: typing.List[TmcDataArea]
-    index_groups: typing.Mapping[constants.AdsIndexGroup, TmcDataArea]
 
     def __init__(self, tmc):
         super().__init__()

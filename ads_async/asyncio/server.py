@@ -78,7 +78,7 @@ class AsyncioAcceptedClient:
             self.log.error('Error response: %r', response)
 
             err_cls = structs.get_struct_by_command(
-                response.request.command_id(),
+                response.request.command_id,
                 request=False)  # type: typing.Type[structs._AdsStructBase]
             err_response = err_cls(result=response.code)
             await self.send_response(err_response,

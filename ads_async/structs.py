@@ -186,10 +186,10 @@ class _AdsStructBase(ctypes.LittleEndianStructure):
 
         return new_struct
 
-    @classmethod
-    def command_id(cls) -> constants.AdsCommandId:
+    @property
+    def command_id(self) -> constants.AdsCommandId:
         """The command ID associated with this request/response."""
-        return cls._command_id
+        return self._command_id
 
 
 def _enum_property(field_name: str, enum_cls: typing.Type[enum.Enum],
@@ -259,7 +259,7 @@ def _create_byte_string_property(field_name: str, *, doc: str = None,
         except ValueError:
             return value
 
-    def fset(self, value: str):
+    def fset(self, value: typing.Union[str, bytes]):
         if isinstance(value, str):
             value = value.encode(encoding)
         setattr(self, field_name, value)
@@ -379,7 +379,7 @@ class AdsDeviceInfo(AdsVersion):
 
     _fields_ = [
         # Inherits version information from AdsVersion
-        ('_name', ctypes.c_char * 16),
+        ('_name', ctypes.c_char * 16),  # type: ignore
     ]
 
     name = _create_byte_string_property(
@@ -550,7 +550,7 @@ class AdsSymbolEntry(_AdsStructBase):
 
     flags = _enum_property('_flags', constants.AdsSymbolFlag)
     data_type = _enum_property('_data_type', constants.AdsDataType)
-    index_group = _enum_property('_index_group',
+    index_group = _enum_property('_index_group',  # type: ignore
                                  constants.AdsIndexGroup,
                                  strict=False)
     _dict_mapping = {'_flags': 'flags',
@@ -624,7 +624,7 @@ class AdsWriteRequest(_AdsStructBase):
     index_group: constants.AdsIndexGroup
     index_offset: int
     write_length: int
-    _data_start: ctypes.c_ubyte * 0
+    _data_start: ctypes.c_ubyte
     data: typing.Any = None
 
     _fields_ = [
@@ -638,7 +638,7 @@ class AdsWriteRequest(_AdsStructBase):
         ('data', '{self.write_length}s', 0, bytes, serialize),
     ]
 
-    index_group = _enum_property('_index_group',
+    index_group = _enum_property('_index_group',  # type: ignore
                                  constants.AdsIndexGroup,
                                  strict=False)
     _dict_mapping = {'_index_group': 'index_group'}
@@ -674,7 +674,7 @@ class AdsReadWriteRequest(_AdsStructBase):
     index_offset: int
     read_length: int
     write_length: int
-    _data_start: ctypes.c_ubyte * 0
+    _data_start: ctypes.c_ubyte
     data: typing.Any = None
 
     _fields_ = [
@@ -689,7 +689,7 @@ class AdsReadWriteRequest(_AdsStructBase):
         ('data', '{self.write_length}s', 0, bytes, serialize),
     ]
 
-    index_group = _enum_property('_index_group',
+    index_group = _enum_property('_index_group',  # type: ignore
                                  constants.AdsIndexGroup,
                                  strict=False)
     _dict_mapping = {'_index_group': 'index_group'}
@@ -731,7 +731,7 @@ class AdsReadRequest(_AdsStructBase):
         ('length', ctypes.c_uint32),
     ]
 
-    index_group = _enum_property('_index_group',
+    index_group = _enum_property('_index_group',  # type: ignore
                                  constants.AdsIndexGroup,
                                  strict=False)
     _dict_mapping = {'_index_group': 'index_group'}
@@ -806,7 +806,8 @@ class AdsReadStateResponse(_AdsStructBase):
         ('dev_state', ctypes.c_uint16),
     ]
 
-    ads_state = _enum_property('_ads_state', constants.AdsState)
+    ads_state = _enum_property('_ads_state',  # type: ignore
+                               constants.AdsState)
     _dict_mapping = {'_ads_state': 'ads_state'}
 
 
@@ -828,7 +829,8 @@ class AdsWriteControlRequest(_AdsStructBase):
         ('data', '{self.write_length}s', 0, bytes, serialize),
     ]
 
-    ads_state = _enum_property('_ads_state', constants.AdsState)
+    ads_state = _enum_property('_ads_state',  # type: ignore
+                               constants.AdsState)
     _dict_mapping = {'_data_start': 'data',
                      '_ads_state': 'ads_state'}
 
@@ -841,7 +843,7 @@ class AdsAddDeviceNotificationRequest(_AdsStructBase):
     length: int
     mode: int
     max_delay: int
-    cycle_time: (ctypes.c_ubyte * 16)
+    cycle_time: ctypes.c_ubyte
 
     _fields_ = [
         ('_index_group', ctypes.c_uint32),
@@ -853,7 +855,7 @@ class AdsAddDeviceNotificationRequest(_AdsStructBase):
         ('reserved', ctypes.c_ubyte * 16),
     ]
 
-    index_group = _enum_property('_index_group',
+    index_group = _enum_property('_index_group',  # type: ignore
                                  constants.AdsIndexGroup,
                                  strict=False)
     _dict_mapping = {'_index_group': 'index_group'}
@@ -957,7 +959,7 @@ class AoEResponseHeader(_AdsStructBase):
 class AoEReadResponse(AoEResponseHeader):
     _fields_ = [
         # Inherits 'result' from AoEResponseHeader
-        ('read_length', ctypes.c_uint32),
+        ('read_length', ctypes.c_uint32),  # type: ignore
         ('_data_start', ctypes.c_uint8 * 0),
     ]
 
@@ -1016,15 +1018,17 @@ class AoENotificationHandleResponse(AoEResponseHeader):
 
 def serialize_data(data_type: constants.AdsDataType, data: typing.Any,
                    length: int = None,
-                   *, endian='<') -> bytes:
+                   *, endian='<') -> typing.Tuple[int, bytes]:
     length = length if length is not None else len(data)
-    st = struct.Struct(f'{endian}{length}{data_type.ctypes_type._type_}')
+    ctypes_type = data_type.ctypes_type._type_  # type: ignore
+    st = struct.Struct(f'{endian}{length}{ctypes_type}')
     return st.size, st.pack(data)
 
 
 def deserialize_data(data_type: constants.AdsDataType,
                      length: int,
                      data: bytes,
-                     *, endian='<') -> typing.Any:
-    st = struct.Struct(f'{endian}{length}{data_type.ctypes_type._type_}')
+                     *, endian='<') -> typing.Tuple[int, typing.Any]:
+    ctypes_type = data_type.ctypes_type._type_  # type: ignore
+    st = struct.Struct(f'{endian}{length}{ctypes_type}')
     return st.size, st.unpack(data)
