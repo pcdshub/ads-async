@@ -19,6 +19,19 @@ Requirements
 * (Optional) pytmc (for loading .tmc files in the server)
 
 
+Functionality
+-------------
+
+Server
+* Reference asyncio implementation.
+* Loads .tmc files for symbol information (basic types only).
+* Supports read, write, read/write of symbols (by handle or name).
+* Supports 'sum up' bulk reads (by way of read_write).
+* Pretends to create/delete notifications (not yet working)
+
+Client
+* Not yet implemented
+
 Installation
 ------------
 ::

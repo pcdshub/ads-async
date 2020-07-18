@@ -55,7 +55,7 @@ def serialize_request(command: structs._AdsStructBase,
         assert command_id is not None
     else:
         serialized = command.serialize()
-        command_id = command.command_id()
+        command_id = command.command_id
 
     aoe = structs.AoEHeader.create_request(
         source=structs.AmsAddr(structs.AmsNetId((1, 2, 3, 4, 5, 6)), 1),
