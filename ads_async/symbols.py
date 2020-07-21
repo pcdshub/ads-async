@@ -31,6 +31,9 @@ class PlcMemory:
         self.memory[offset:offset + size] = data
 
 
+T_Symbol = typing.TypeVar('T_Symbol', bound='Symbol')
+
+
 class Symbol:
     name: str
     data_type: AdsDataType
@@ -45,21 +48,65 @@ class Symbol:
                  offset: int,
                  data_type: constants.AdsDataType,
                  array_length: int,
-                 data_area: 'DataArea',
-                 memory: PlcMemory):
-        self.name = name
-        self.data_area = data_area
-        self.offset = offset
+                 data_area: 'DataArea'
+                 ):
         self.array_length = array_length
+        self.data_area = data_area
         self.data_type = data_type
+        self.name = name
+        self.offset = offset
 
+        self._configure_data_type()
+
+    @property
+    def memory(self):
+        return self.data_area.memory
+
+    @staticmethod
+    def from_tmc_symbol(
+            tmc_symbol: 'pytmc.parser.symbol',
+            data_area: 'DataArea',
+            ) -> T_Symbol:
+        info = tmc_symbol.info
+        bit_offset = int(info['bit_offs'])
+        if (bit_offset % 8) != 0:
+            logger.warning('Symbol not byte-aligned?')
+            return
+
+        offset = bit_offset // 8
+        type_name = info['type']
+        if type_name.startswith('STRING') and '(' in type_name:
+            array_length = int(type_name.split('(')[1].rstrip(')'))
+            type_name = 'STRING'
+        else:
+            array_length = getattr(tmc_symbol.array_info, 'elements', 1)
+
+        try:
+            data_type = TmcTypes[type_name].value
+        except KeyError:
+            logger.warning('Complex types not yet supported: %s', info['type'])
+            # assert tmc_symbol.data_type.is_complex_type
+            return
+
+        symbol = Symbol(
+            tmc_symbol.name,
+            data_area=data_area,
+            offset=offset,
+            data_type=data_type,
+            array_length=array_length,
+        )
+        if hasattr(tmc_symbol, 'Comment'):
+            symbol.__doc__ = tmc_symbol.Comment[0].text
+
+        return symbol
+
+    def _configure_data_type(self):
         ctypes_base_type = self.data_type.ctypes_type
-        if array_length > 1:
-            self.ctypes_data_type = array_length * ctypes_base_type
+        if self.array_length > 1:
+            self.ctypes_data_type = self.array_length * ctypes_base_type
         else:
             self.ctypes_data_type = ctypes_base_type
         self.size = ctypes.sizeof(self.ctypes_data_type)
-        self.memory = memory
 
     def read(self):
         raw = self.memory.read(self.offset, self.size)
@@ -115,38 +162,11 @@ class DataArea:
 
 class TmcDataArea(DataArea):
     def add_symbol(self, tmc_symbol: 'pytmc.parser.Symbol'):
-        info = tmc_symbol.info
-        bit_offset = int(info['bit_offs'])
-        if (bit_offset % 8) != 0:
-            logger.warning('Symbol not byte-aligned?')
-            return
-
-        offset = bit_offset // 8
-        type_name = info['type']
-        if type_name.startswith('STRING') and '(' in type_name:
-            array_length = int(type_name.split('(')[1].rstrip(')'))
-            type_name = 'STRING'
-        else:
-            array_length = getattr(tmc_symbol.array_info, 'elements', 1)
-
-        try:
-            data_type = TmcTypes[type_name].value
-        except KeyError:
-            logger.warning('Complex types not yet supported: %s', info['type'])
-            # assert tmc_symbol.data_type.is_complex_type
-            return
-
-        symbol = self.symbols[tmc_symbol.name] = Symbol(
-            tmc_symbol.name,
+        symbol = Symbol.from_tmc_symbol(
+            tmc_symbol,
             data_area=self,
-            offset=offset,
-            data_type=data_type,
-            array_length=array_length,
-            memory=self.memory
         )
-        if hasattr(tmc_symbol, 'Comment'):
-            symbol.__doc__ = tmc_symbol.Comment[0].text
-
+        self.symbols[tmc_symbol.name] = symbol
         return symbol
 
     def __repr__(self):
