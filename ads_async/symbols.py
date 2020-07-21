@@ -92,7 +92,7 @@ class Symbol:
 class DataArea:
     memory: PlcMemory
     index_group: constants.AdsIndexGroup
-    symbols: typing.Mapping[str, Symbol]
+    symbols: typing.Dict[str, Symbol]
     area_type: str
 
     def __init__(self, index_group: constants.AdsIndexGroup,
@@ -206,7 +206,7 @@ class DataAreaIndexGroup(enum.Enum):
 
 class Database:
     data_areas: typing.List[DataArea]
-    index_groups: typing.Mapping[constants.AdsIndexGroup, DataArea]
+    index_groups: typing.Dict[constants.AdsIndexGroup, DataArea]
 
     def get_symbol_by_name(self, symbol_name) -> Symbol:
         raise KeyError(symbol_name)
@@ -230,7 +230,7 @@ class TmcDatabase(Database):
         self.index_groups = {}
         self._load_data_areas()
 
-    def get_symbol_by_name(self, symbol_name) -> Symbol:
+    def get_symbol_by_name(self, symbol_name: str) -> Symbol:
         for data_area in self.data_areas:
             try:
                 return data_area.symbols[symbol_name]

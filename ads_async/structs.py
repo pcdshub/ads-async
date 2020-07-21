@@ -154,7 +154,8 @@ class _AdsStructBase(ctypes.LittleEndianStructure):
 
     @classmethod
     def from_buffer_extended(cls: typing.Type[T_AdsStructure],
-                             buf: bytearray) -> T_AdsStructure:
+                             buf: typing.Union[memoryview, bytearray]
+                             ) -> T_AdsStructure:
         """
         Deserialize data from `buf` into a structure + payload.
 

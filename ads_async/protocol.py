@@ -82,17 +82,17 @@ def from_wire(
         else:
             try:
                 cmd_cls = structs.get_struct_by_command(
-                    aoe_header.command_id, request=aoe_header.is_request)
+                    aoe_header.command_id,
+                    request=aoe_header.is_request
+                )  # type: structs._AdsStructBase
                 cmd = None
             except KeyError:
                 cmd = view[:aoe_header.length]
             else:
-                if hasattr(cmd_cls, 'from_buffer_extended'):
-                    # TODO: can't call super.from_buffer in a subclass
-                    # classmethod?
-                    cmd = cmd_cls.from_buffer_extended(view)
-                else:
-                    cmd = cmd_cls.from_buffer(view)
+                # if hasattr(cmd_cls, 'from_buffer_extended'):
+                # TODO: can't call super.from_buffer in a subclass
+                # classmethod?
+                cmd = cmd_cls.from_buffer_extended(view)
 
             item = (aoe_header, cmd)
 
@@ -187,8 +187,9 @@ class AcceptedClient:
 
     _handle_counter: utils.ThreadsafeCounter
     _notification_counter: utils.ThreadsafeCounter
-    _handlers: typing.Mapping[typing.Tuple[AdsCommandId, AdsIndexGroup],
-                              typing.Callable]
+    _handlers: typing.Dict[typing.Tuple[AdsCommandId,
+                                        typing.Optional[AdsIndexGroup]],
+                           typing.Callable]
     address: typing.Tuple[str, int]
     handle_to_notification: dict
     handle_to_symbol: dict
@@ -349,7 +350,7 @@ class AcceptedClient:
             index_offset=symbol.offset,
             size=symbol.size,
             data_type=symbol.data_type,
-            flags=0,  # TODO symbol.flags
+            flags=constants.AdsSymbolFlag(0),  # TODO symbol.flags
             name=symbol.name,
             type_name=symbol.data_type.name,
             comment=symbol.__doc__ or '',
