@@ -91,7 +91,7 @@ class Symbol:
 
 class DataArea:
     memory: PlcMemory
-    index_group: constants.AdsIndexGroup = None
+    index_group: constants.AdsIndexGroup
     symbols: typing.Mapping[str, Symbol]
     area_type: str
 
@@ -99,7 +99,7 @@ class DataArea:
                  area_type: str,
                  *,
                  memory: PlcMemory = None,
-                 memory_size=None):
+                 memory_size: typing.Optional[int] = None):
 
         self.index_group = index_group
         self.area_type = area_type
@@ -114,7 +114,7 @@ class DataArea:
 
 
 class TmcDataArea(DataArea):
-    def add_symbol(self, tmc_symbol):
+    def add_symbol(self, tmc_symbol: 'pytmc.parser.Symbol'):
         info = tmc_symbol.info
         bit_offset = int(info['bit_offs'])
         if (bit_offset % 8) != 0:
@@ -249,8 +249,9 @@ class TmcDatabase(Database):
                 continue
 
             index_group = DataAreaIndexGroup[area_type]
-            area = TmcDataArea(index_group, area_type, memory_size=byte_size)
-            self.add_data_area(index_group, area)
+            area = self.add_data_area(
+                index_group, TmcDataArea(index_group, area_type,
+                                         memory_size=byte_size))
 
             for sym in tmc_area.find(pytmc.parser.Symbol):
                 area.add_symbol(sym)
@@ -258,14 +259,16 @@ class TmcDatabase(Database):
         self._configure_plc_memory_area()
 
     def add_data_area(self, index_group: constants.AdsIndexGroup,
-                      area: DataArea):
+                      area: DataArea) -> DataArea:
         self.data_areas.append(area)
         self.index_groups[index_group] = area
+        return area
 
     def _configure_plc_memory_area(self):
         if constants.AdsIndexGroup.PLC_MEMORY_AREA in self.index_groups:
             return
 
         index_group = constants.AdsIndexGroup.PLC_MEMORY_AREA
-        area = DataArea(index_group, 'PLC_MEMORY_AREA', memory_size=100_000)
-        self.add_data_area(index_group, area)
+        self.add_data_area(
+            index_group, DataArea(index_group, 'PLC_MEMORY_AREA',
+                                  memory_size=100_000))
