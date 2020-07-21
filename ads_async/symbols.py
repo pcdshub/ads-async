@@ -31,9 +31,6 @@ class PlcMemory:
         self.memory[offset:offset + size] = data
 
 
-T_Symbol = typing.TypeVar('T_Symbol', bound='Symbol')
-
-
 class Symbol:
     name: str
     data_type: AdsDataType
@@ -66,12 +63,11 @@ class Symbol:
     def from_tmc_symbol(
             tmc_symbol: 'pytmc.parser.symbol',
             data_area: 'DataArea',
-            ) -> T_Symbol:
+            ) -> 'Symbol':
         info = tmc_symbol.info
         bit_offset = int(info['bit_offs'])
         if (bit_offset % 8) != 0:
-            logger.warning('Symbol not byte-aligned?')
-            return
+            raise ValueError('Symbol not byte-aligned?')
 
         offset = bit_offset // 8
         type_name = info['type']
@@ -84,9 +80,10 @@ class Symbol:
         try:
             data_type = TmcTypes[type_name].value
         except KeyError:
-            logger.warning('Complex types not yet supported: %s', info['type'])
             # assert tmc_symbol.data_type.is_complex_type
-            return
+            raise ValueError(
+                f'Complex types not yet supported: {info["type"]}'
+            ) from None
 
         symbol = Symbol(
             tmc_symbol.name,
@@ -162,10 +159,13 @@ class DataArea:
 
 class TmcDataArea(DataArea):
     def add_symbol(self, tmc_symbol: 'pytmc.parser.Symbol'):
-        symbol = Symbol.from_tmc_symbol(
-            tmc_symbol,
-            data_area=self,
-        )
+        try:
+            symbol = Symbol.from_tmc_symbol(tmc_symbol,
+                                            data_area=self)  # type: Symbol
+        except ValueError as ex:
+            logger.debug(str(ex))
+            return
+
         self.symbols[tmc_symbol.name] = symbol
         return symbol
 
