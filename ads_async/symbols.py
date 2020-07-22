@@ -35,6 +35,31 @@ class PlcMemory:
         size = len(data)
         self.memory[offset:offset + size] = data
 
+    def read_bits(self, offset, bit_offset, bit_size) -> bytes:
+        # byte_size = math.ceil(bit_size / 8)
+        assert bit_size <= 8
+        value = self.memory[offset:offset + 1]
+        return (value >> bit_offset) & ((2 ** bit_size) - 1)
+
+    def write_bits(self, offset, bit_offset, bit_size, data):
+        # Not thread-safe
+        assert bit_size <= 8
+        read_bits = 8
+        full_mask = (2 ** read_bits) - 1
+        read_bit_mask = ((2 ** bit_size) - 1) << bit_offset
+
+        # clear the value first
+        value = self.memory[offset:offset + 1] & (full_mask & ~read_bit_mask)
+        # shift and bring in the data
+        value = value | ((data & ((2 ** bit_size) - 1)) << bit_offset)
+        self.memory[offset:offset + 1] = value
+
+
+class OffsetSize:
+    def __init__(self, offset, size):
+        self.offset = offset
+        self.size = size
+
 
 class Symbol:
     name: str
@@ -42,19 +67,22 @@ class Symbol:
     data_area: 'DataArea'
     byte_size: int
     array_length: int
+    bit_offset: typing.Optional[OffsetSize]
 
     def __init__(self,
                  name: str,
                  offset: int,
                  data_type: constants.AdsDataType,
                  array_length: int,
-                 data_area: 'DataArea'
+                 data_area: 'DataArea',
+                 bit_offset: int = None,
                  ):
         self.array_length = array_length
         self.data_area = data_area
         self.data_type = data_type
         self.name = name
         self.offset = offset
+        self.bit_offset = bit_offset
 
         self._configure_data_type()
 
@@ -71,7 +99,12 @@ class Symbol:
         self.byte_size = ctypes.sizeof(self.ctypes_data_type)
 
     def read(self):
-        raw = self.memory.read(self.offset, self.byte_size)
+        if self.bit_offset is not None:
+            raw = self.memory.read_bits(self.offset,
+                                        self.bit_offset.offset,
+                                        self.bit_offset.size)
+        else:
+            raw = self.memory.read(self.offset, self.byte_size)
         return self.ctypes_data_type.from_buffer(raw)
 
     def write(self, value):
@@ -85,6 +118,11 @@ class Symbol:
                 value = self.ctypes_data_type(value)
 
         logger.debug('Symbol %s write %s', self, value)
+        if self.bit_offset is not None:
+            return self.memory.write_bits(self.offset,
+                                          self.bit_offset.offset,
+                                          self.bit_offset.size,
+                                          bytes(value))
         return self.memory.write(self.offset, bytes(value))
 
     @property
@@ -93,7 +131,7 @@ class Symbol:
 
     @property
     def memory_range(self) -> typing.Tuple[int, int]:
-        return (self.offset, self.offset + self.byte_size + 1)
+        return (self.offset, self.offset + self.byte_size)
 
     def __repr__(self):
         mem_start, mem_end = self.memory_range
@@ -110,14 +148,18 @@ def tmc_to_symbols(
         data_area: 'DataArea',
         *,
         parent_name: str = '',
-        additional_offset: int = 0,
+        parent_bit_offset: int = 0,
         ) -> typing.Generator['Symbol', None, None]:
 
-    bit_offset = int(item.BitOffs[0].bit_offset)
-    if (bit_offset % 8) != 0:
-        raise ValueError('Symbol not byte-aligned?')
+    bit_offset = item.BitOffs[0].bit_offset + parent_bit_offset
+    bit_size = item.BitSize[0].bit_size
+    byte_offset = bit_offset // 8
+    if (bit_offset % 8) != 0 or (bit_size % 8) != 0:
+        bit_offset_obj = OffsetSize(bit_offset - (byte_offset * 8),
+                                    bit_size)
+    else:
+        bit_offset_obj = None
 
-    offset = bit_offset // 8 + additional_offset
     data_type = item.data_type
 
     if parent_name:
@@ -130,9 +172,10 @@ def tmc_to_symbols(
         symbol = BasicSymbol(
             name=symbol_name,
             data_area=data_area,
-            offset=offset,
+            offset=byte_offset,
             data_type=ads_data_type,
             array_length=data_type.length,
+            bit_offset=bit_offset_obj,
         )
         if hasattr(item, 'Comment'):
             symbol.__doc__ = item.Comment[0].text
@@ -145,23 +188,23 @@ def tmc_to_symbols(
                              if len(sub_item) > 1))
         sub_items.sort(key=lambda item: item.bit_offset)
 
+        if (bit_size % 8) != 0:
+            raise ValueError('ComplexSymbol not byte aligned?')
+
         for sub_item in sub_items:
             yield from tmc_to_symbols(sub_item, data_area=data_area,
                                       parent_name=symbol_name,
-                                      additional_offset=offset,
+                                      parent_bit_offset=bit_offset,
                                       )
-
-        bit_size = int(item.BitSize[0].bit_size)
-        if (bit_size % 8) != 0:
-            raise ValueError('Symbol bits?')
+            # bit_offset += sub_item.BitSize[0].bit_size
 
         yield ComplexSymbol(
-            name=item.name,
+            name=symbol_name,
             data_area=data_area,
-            offset=offset,
+            offset=byte_offset,
             data_type=AdsDataType.BIGTYPE,
             array_length=data_type.length,
-            struct_size=bit_size // 8,
+            struct_size=math.ceil(bit_size / 8),
         )
 
 
@@ -258,6 +301,23 @@ class TmcTypes(enum.Enum):
 
     STRING = AdsDataType.STRING
     COMPLEX = AdsDataType.BIGTYPE
+
+    # TODO: how to handle these best?
+    BIT = AdsDataType.BIT
+
+    TIME = AdsDataType.UINT32
+    TIME_OF_DAY = AdsDataType.UINT32
+    DATE = AdsDataType.UINT32
+    DATE_AND_TIME = AdsDataType.UINT32
+    LTIME = AdsDataType.UINT64
+    DT = AdsDataType.UINT32
+    TOD = AdsDataType.UINT32
+
+    OTCID = AdsDataType.UINT32
+
+    GUID = AdsDataType.UINT64   # TODO: incorrect, 128-bit
+    PVOID = AdsDataType.UINT64  # TODO: 32 on 32-bit machines...
+    ITComObjectServer = AdsDataType.UINT64  # TODO: 32 on 32-bit machines...
 
 
 class DataAreaIndexGroup(enum.Enum):
@@ -424,8 +484,16 @@ def dump_memory(
     empty_format = f'{memory_format} ~ {memory_format} | ...'
     filled_format = f'{memory_format} | {{items}}'
 
-    symbol_format = '{symbol.name} '
+    byte_aligned_symbol = '{symbol.name} '
+    bit_aligned_symbol = (
+        '{symbol.name}&{symbol.bit_offset.offset}#{symbol.bit_offset.size}'
+    )
     spacer = '\n   ' + ' ' * zeros
+
+    def format_symbol(symbol):
+        if symbol.bit_offset is not None:
+            return bit_aligned_symbol.format(symbol=symbol)
+        return byte_aligned_symbol.format(symbol=symbol)
 
     for offset, items in sorted(mapped.items()):
         if items:
@@ -433,8 +501,7 @@ def dump_memory(
                 print(empty_format.format(last_offset + 1, offset - 1),
                       file=file)
             last_offset = offset
-            items = spacer.join(symbol_format.format(symbol=symbol)
-                                for symbol in items)
+            items = spacer.join(format_symbol(symbol) for symbol in items)
             print(filled_format.format(offset, items=items))
 
     if len(memory) - last_offset > 1:
