@@ -352,7 +352,7 @@ class AcceptedClient:
             data_type=symbol.data_type,
             flags=constants.AdsSymbolFlag(0),  # TODO symbol.flags
             name=symbol.name,
-            type_name=symbol.data_type.name,
+            type_name=symbol.data_type_name,
             comment=symbol.__doc__ or '',
         )
         return [structs.AoEReadResponse(data=symbol_entry)]

@@ -3,6 +3,7 @@ import enum
 import logging
 import math
 import sys
+import textwrap
 import typing
 
 from . import constants, structs
@@ -15,6 +16,11 @@ except ImportError:
 
 
 logger = logging.getLogger(__name__)
+POINTER_TYPE = ctypes.c_uint64
+
+
+class NullPointerDereferencedError(Exception):
+    ...
 
 
 class PlcMemory:
@@ -68,6 +74,8 @@ class Symbol:
     byte_size: int
     array_length: int
     bit_offset: typing.Optional[OffsetSize]
+    pointer: bool
+    data_type_name: str
 
     def __init__(self,
                  name: str,
@@ -75,14 +83,21 @@ class Symbol:
                  data_type: constants.AdsDataType,
                  array_length: int,
                  data_area: 'DataArea',
+                 type_name: str = None,
                  bit_offset: int = None,
+                 pointer: bool = False,
                  ):
         self.array_length = array_length
         self.data_area = data_area
         self.data_type = data_type
+        self.data_type_name = type_name or data_type.name
         self.name = name
         self.offset = offset
         self.bit_offset = bit_offset
+        self.pointer = pointer  # TODO: only depth of 1
+
+        if pointer and bit_offset is not None:
+            raise ValueError('Pointer with bit offset?')
 
         self._configure_data_type()
 
@@ -104,7 +119,9 @@ class Symbol:
                                         self.bit_offset.offset,
                                         self.bit_offset.size)
         else:
-            raw = self.memory.read(self.offset, self.byte_size)
+            offset = (self.offset if not self.pointer
+                      else self._dereference_pointer())
+            raw = self.memory.read(offset, self.byte_size)
         return self.ctypes_data_type.from_buffer(raw)
 
     def write(self, value):
@@ -123,7 +140,19 @@ class Symbol:
                                           self.bit_offset.offset,
                                           self.bit_offset.size,
                                           bytes(value))
-        return self.memory.write(self.offset, bytes(value))
+
+        offset = (self.offset if not self.pointer
+                  else self._dereference_pointer())
+        return self.memory.write(offset, bytes(value))
+
+    def _dereference_pointer(self) -> int:
+        if not self.pointer:
+            raise ValueError('Not a pointer to dereference')
+        raw = self.memory.read(self.offset, ctypes.sizeof(POINTER_TYPE))
+        ptr_value = POINTER_TYPE.from_buffer(raw)
+        if not ptr_value:
+            raise NullPointerDereferencedError(f'{self.name}')
+        return ptr_value
 
     @property
     def value(self):
@@ -131,19 +160,24 @@ class Symbol:
 
     @property
     def memory_range(self) -> typing.Tuple[int, int]:
-        return (self.offset, self.offset + self.byte_size)
+        offset = (self.offset if not self.pointer
+                  else self._dereference_pointer())
+        return (offset, offset + self.byte_size)
 
     def __repr__(self):
         mem_start, mem_end = self.memory_range
+        pointer = ' pointer' if self.pointer else ''
         return (
             f'<{self.__class__.__name__} {self.name!r} '
             f'[{mem_start}:{mem_end}] '
-            f'value={self.value}>'
+            f'value={self.value}'
+            f'{pointer}'
+            f'>'
         )
 
 
 def tmc_to_symbols(
-        item: typing.Union['pytmc.parser.symbol',
+        item: typing.Union['pytmc.parser.Symbol',
                            'pytmc.parser.SubItem'],
         data_area: 'DataArea',
         *,
@@ -167,8 +201,15 @@ def tmc_to_symbols(
     else:
         symbol_name = item.name
 
+    pointer = data_type.is_pointer or data_type.is_reference
     if not data_type.is_complex_type:
-        ads_data_type = TmcTypes[data_type.name].value
+        base_type = getattr(data_type, 'base_type', None)
+        if base_type is not None:
+            ads_type_name = base_type.name
+        else:
+            ads_type_name = data_type.name
+        ads_data_type = TmcTypes[ads_type_name].value
+
         symbol = BasicSymbol(
             name=symbol_name,
             data_area=data_area,
@@ -176,6 +217,8 @@ def tmc_to_symbols(
             data_type=ads_data_type,
             array_length=data_type.length,
             bit_offset=bit_offset_obj,
+            pointer=pointer,
+            type_name=data_type.name,
         )
         if hasattr(item, 'Comment'):
             symbol.__doc__ = item.Comment[0].text
@@ -184,19 +227,29 @@ def tmc_to_symbols(
     else:
         # hack to just get first-level sub-items, including subclass (=extended
         # type) items
-        sub_items = list(set(sub_item[1] for sub_item in item.walk()
-                             if len(sub_item) > 1))
+
+        # TODO is this a bug?
+        if isinstance(item, pytmc.parser.Symbol):
+            sub_items = list(set(sub_item[1] for sub_item in item.walk()
+                                 if len(sub_item) > 1
+                                 ))
+        else:
+            sub_items = list(set(sub_item[0] for sub_item in data_type.walk()))
+
         sub_items.sort(key=lambda item: item.bit_offset)
 
         if (bit_size % 8) != 0:
             raise ValueError('ComplexSymbol not byte aligned?')
 
-        for sub_item in sub_items:
-            yield from tmc_to_symbols(sub_item, data_area=data_area,
-                                      parent_name=symbol_name,
-                                      parent_bit_offset=bit_offset,
-                                      )
-            # bit_offset += sub_item.BitSize[0].bit_size
+        if pointer:
+            # TODO symbol base address changes
+            ...
+        else:
+            for sub_item in sub_items:
+                yield from tmc_to_symbols(sub_item, data_area=data_area,
+                                          parent_name=symbol_name,
+                                          parent_bit_offset=bit_offset,
+                                          )
 
         yield ComplexSymbol(
             name=symbol_name,
@@ -205,6 +258,8 @@ def tmc_to_symbols(
             data_type=AdsDataType.BIGTYPE,
             array_length=data_type.length,
             struct_size=math.ceil(bit_size / 8),
+            pointer=data_type.is_pointer or data_type.is_reference,
+            type_name=data_type.name,
         )
 
 
@@ -444,10 +499,17 @@ def map_symbols_in_memory(
         # with all its members -> keep parent symbol first)
         return (sym.memory_range[0], -sym.byte_size)
 
-    symbols = list(sorted(symbols, key=symbol_sort))
-    for sym in symbols:
+    pointers = set(sym for sym in symbols if sym.pointer)
+    symbols = set(symbols) - pointers
+
+    for sym in sorted(symbols, key=symbol_sort):
         for offset in range(*sym.memory_range):
             byte_to_symbol[offset].append(sym)
+
+    for sym in pointers:
+        for idx in range(sym.offset, sym.offset + ctypes.sizeof(POINTER_TYPE)):
+            byte_to_symbol[idx].append(sym)
+
     return byte_to_symbol
 
 
@@ -477,33 +539,60 @@ def dump_memory(
         {byte_offset: [list of symbols]}
     """
     mapped = map_symbols_in_memory(memory, symbols)
-    last_offset = -1
+    if not mapped:
+        return
 
     zeros = int(math.log10(len(memory))) + 1
     memory_format = '{:>0%d}' % (zeros, )
-    empty_format = f'{memory_format} ~ {memory_format} | ...'
-    filled_format = f'{memory_format} | {{items}}'
+    range_format = f'{memory_format} ~ {memory_format}'
+    indent_size = len(range_format.format(0, 0))
 
-    byte_aligned_symbol = '{symbol.name} '
+    byte_aligned_symbol = '{symbol.name}{pointer}'
     bit_aligned_symbol = (
-        '{symbol.name}&{symbol.bit_offset.offset}#{symbol.bit_offset.size}'
+        '{symbol.name}{pointer}'
+        '&{symbol.bit_offset.offset}#{symbol.bit_offset.size}'
     )
-    spacer = '\n   ' + ' ' * zeros
+    spacer = '\n+ '
 
     def format_symbol(symbol):
+        pointer = '*' if symbol.pointer else ''
         if symbol.bit_offset is not None:
-            return bit_aligned_symbol.format(symbol=symbol)
-        return byte_aligned_symbol.format(symbol=symbol)
+            return bit_aligned_symbol.format(symbol=symbol, pointer=pointer)
+        return byte_aligned_symbol.format(symbol=symbol, pointer=pointer)
 
+    def reduce_redundant(symbols):
+        if not symbols:
+            return symbols
+
+        length_to_sym = {len(sym): sym for sym in symbols}
+        if len(length_to_sym) != len(symbols):
+            return symbols
+
+        longest = length_to_sym[max(length_to_sym)]
+        if all(longest.startswith(sym) for sym in symbols):
+            return [longest]
+        return symbols
+
+    output = {}
     for offset, items in sorted(mapped.items()):
-        if items:
-            if offset - last_offset > 1:
-                print(empty_format.format(last_offset + 1, offset - 1),
-                      file=file)
-            last_offset = offset
-            items = spacer.join(format_symbol(symbol) for symbol in items)
-            print(filled_format.format(offset, items=items))
+        items = reduce_redundant([format_symbol(symbol) for symbol in items])
+        output[offset] = spacer.join(items)
 
-    if len(memory) - last_offset > 1:
-        print(empty_format.format(last_offset + 1, len(memory) - 1),
+    def find_subsequent_matches(idx, text):
+        while idx < len(output) and output[idx] == text:
+            idx += 1
+        return idx - 1
+
+    start_idx = 0
+    while start_idx < len(output):
+        end_idx = find_subsequent_matches(start_idx + 1, output[start_idx])
+
+        if start_idx != end_idx:
+            addr = range_format.format(start_idx, end_idx)
+        else:
+            addr = memory_format.format(start_idx)
+
+        wrapped = textwrap.indent(output[start_idx], ' ' * (indent_size + 1))
+        print(' | '.join((addr.ljust(indent_size), wrapped.lstrip())),
               file=file)
+        start_idx = end_idx + 1
