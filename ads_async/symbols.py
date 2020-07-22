@@ -1,6 +1,8 @@
 import ctypes
 import enum
 import logging
+import math
+import sys
 import typing
 
 from . import constants, structs
@@ -23,6 +25,9 @@ class PlcMemory:
     def __init__(self, size):
         self.memory = bytearray(size)
 
+    def __len__(self):
+        return len(self.memory)
+
     def read(self, offset, size):
         return memoryview(self.memory)[offset:offset + size]
 
@@ -35,7 +40,7 @@ class Symbol:
     name: str
     data_type: AdsDataType
     data_area: 'DataArea'
-    size: int
+    byte_size: int
     array_length: int
 
     def __init__(self,
@@ -63,10 +68,10 @@ class Symbol:
             self.ctypes_data_type = self.array_length * ctypes_base_type
         else:
             self.ctypes_data_type = ctypes_base_type
-        self.size = ctypes.sizeof(self.ctypes_data_type)
+        self.byte_size = ctypes.sizeof(self.ctypes_data_type)
 
     def read(self):
-        raw = self.memory.read(self.offset, self.size)
+        raw = self.memory.read(self.offset, self.byte_size)
         return self.ctypes_data_type.from_buffer(raw)
 
     def write(self, value):
@@ -86,9 +91,15 @@ class Symbol:
     def value(self):
         return self.read()
 
+    @property
+    def memory_range(self) -> typing.Tuple[int, int]:
+        return (self.offset, self.offset + self.byte_size + 1)
+
     def __repr__(self):
+        mem_start, mem_end = self.memory_range
         return (
-            f'<{self.__class__.__name__} name={self.name!r} '
+            f'<{self.__class__.__name__} {self.name!r} '
+            f'[{mem_start}:{mem_end}] '
             f'value={self.value}>'
         )
 
@@ -174,7 +185,7 @@ class BasicSymbol(Symbol):
             self.ctypes_data_type = self.array_length * ctypes_base_type
         else:
             self.ctypes_data_type = ctypes_base_type
-        self.size = ctypes.sizeof(self.ctypes_data_type)
+        self.byte_size = ctypes.sizeof(self.ctypes_data_type)
 
 
 class ComplexSymbol(Symbol):
@@ -183,7 +194,7 @@ class ComplexSymbol(Symbol):
         super().__init__(**kwargs)
 
     def _configure_data_type(self):
-        self.size = self._struct_size * self.array_length
+        self.byte_size = self._struct_size * self.array_length
         self.ctypes_data_type = (
             (ctypes.c_ubyte * self._struct_size) * self.array_length
         )
@@ -343,3 +354,89 @@ class TmcDatabase(Database):
         self.add_data_area(
             index_group, DataArea(index_group, 'PLC_MEMORY_AREA',
                                   memory_size=100_000))
+
+
+def map_symbols_in_memory(
+        memory: PlcMemory, symbols: typing.List[Symbol]
+        ) -> typing.Dict[int, typing.List[Symbol]]:
+    """
+    Map out memory indicating where Symbols are located.
+
+    Not memory or time efficient; call sparingly.
+
+    Parameters
+    ----------
+    memory : PlcMemory
+        The memory backing the given symbols.
+
+    symbols : list of Symbol
+        The symbols in memory.
+
+    Returns
+    -------
+    dict
+        {byte_offset: [list of symbols]}
+    """
+    byte_to_symbol = {idx: [] for idx in range(len(memory))}
+
+    def symbol_sort(sym):
+        # In order of memory location, in reverse size (parent symbol overlap
+        # with all its members -> keep parent symbol first)
+        return (sym.memory_range[0], -sym.byte_size)
+
+    symbols = list(sorted(symbols, key=symbol_sort))
+    for sym in symbols:
+        for offset in range(*sym.memory_range):
+            byte_to_symbol[offset].append(sym)
+    return byte_to_symbol
+
+
+def dump_memory(
+        memory: PlcMemory, symbols: typing.List[Symbol],
+        file=sys.stdout,
+        ) -> typing.Dict[int, typing.List[Symbol]]:
+    """
+    Map out memory indicating where Symbols are located and print to `file`.
+
+    Not memory or time efficient; call sparingly.
+
+    Parameters
+    ----------
+    memory : PlcMemory
+        The memory backing the given symbols.
+
+    symbols : list of Symbol
+        The symbols in memory.
+
+    file : file-like object, optional
+        Defaults to standard output.
+
+    Returns
+    -------
+    dict
+        {byte_offset: [list of symbols]}
+    """
+    mapped = map_symbols_in_memory(memory, symbols)
+    last_offset = -1
+
+    zeros = int(math.log10(len(memory))) + 1
+    memory_format = '{:>0%d}' % (zeros, )
+    empty_format = f'{memory_format} ~ {memory_format} | ...'
+    filled_format = f'{memory_format} | {{items}}'
+
+    symbol_format = '{symbol.name} '
+    spacer = '\n   ' + ' ' * zeros
+
+    for offset, items in sorted(mapped.items()):
+        if items:
+            if offset - last_offset > 1:
+                print(empty_format.format(last_offset + 1, offset - 1),
+                      file=file)
+            last_offset = offset
+            items = spacer.join(symbol_format.format(symbol=symbol)
+                                for symbol in items)
+            print(filled_format.format(offset, items=items))
+
+    if len(memory) - last_offset > 1:
+        print(empty_format.format(last_offset + 1, len(memory) - 1),
+              file=file)

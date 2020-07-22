@@ -167,13 +167,16 @@ if __name__ == '__main__':
 
     async def test():
         global server
-        from ..symbols import TmcDatabase
+        from ..symbols import TmcDatabase, dump_memory
         import pathlib
         module_path = pathlib.Path(__file__).parent.parent
         database = TmcDatabase(module_path / 'tests' / 'kmono.tmc')
         for data_area in database.data_areas:
-            for name, symbol in data_area.symbols.items():
-                print(name, symbol)
+            # for name, symbol in data_area.symbols.items():
+            #   print(name, symbol)
+            print()
+            print(data_area.area_type)
+            dump_memory(data_area.memory, data_area.symbols.values())
 
         server = AsyncioServer(database)
         await server.start()
