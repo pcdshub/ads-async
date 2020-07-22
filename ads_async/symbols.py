@@ -35,8 +35,6 @@ class Symbol:
     name: str
     data_type: AdsDataType
     data_area: 'DataArea'
-    ctypes_data_type: typing.Union[typing.Type[ctypes.Array],
-                                   typing.Type[ctypes._SimpleCData]]
     size: int
     array_length: int
 
@@ -56,46 +54,8 @@ class Symbol:
         self._configure_data_type()
 
     @property
-    def memory(self):
+    def memory(self) -> PlcMemory:
         return self.data_area.memory
-
-    @staticmethod
-    def from_tmc_symbol(
-            tmc_symbol: 'pytmc.parser.symbol',
-            data_area: 'DataArea',
-            ) -> 'Symbol':
-        info = tmc_symbol.info
-        bit_offset = int(info['bit_offs'])
-        if (bit_offset % 8) != 0:
-            raise ValueError('Symbol not byte-aligned?')
-
-        offset = bit_offset // 8
-        type_name = info['type']
-        if type_name.startswith('STRING') and '(' in type_name:
-            array_length = int(type_name.split('(')[1].rstrip(')'))
-            type_name = 'STRING'
-        else:
-            array_length = getattr(tmc_symbol.array_info, 'elements', 1)
-
-        try:
-            data_type = TmcTypes[type_name].value
-        except KeyError:
-            # assert tmc_symbol.data_type.is_complex_type
-            raise ValueError(
-                f'Complex types not yet supported: {info["type"]}'
-            ) from None
-
-        symbol = Symbol(
-            tmc_symbol.name,
-            data_area=data_area,
-            offset=offset,
-            data_type=data_type,
-            array_length=array_length,
-        )
-        if hasattr(tmc_symbol, 'Comment'):
-            symbol.__doc__ = tmc_symbol.Comment[0].text
-
-        return symbol
 
     def _configure_data_type(self):
         ctypes_base_type = self.data_type.ctypes_type
@@ -133,6 +93,102 @@ class Symbol:
         )
 
 
+def tmc_to_symbols(
+        item: typing.Union['pytmc.parser.symbol',
+                           'pytmc.parser.SubItem'],
+        data_area: 'DataArea',
+        *,
+        parent_name: str = '',
+        additional_offset: int = 0,
+        ) -> typing.Generator['Symbol', None, None]:
+
+    bit_offset = int(item.BitOffs[0].bit_offset)
+    if (bit_offset % 8) != 0:
+        raise ValueError('Symbol not byte-aligned?')
+
+    offset = bit_offset // 8 + additional_offset
+    data_type = item.data_type
+
+    if parent_name:
+        symbol_name = '.'.join((parent_name, item.name))
+    else:
+        symbol_name = item.name
+
+    if not data_type.is_complex_type:
+        ads_data_type = TmcTypes[data_type.name].value
+        symbol = BasicSymbol(
+            name=symbol_name,
+            data_area=data_area,
+            offset=offset,
+            data_type=ads_data_type,
+            array_length=data_type.length,
+        )
+        if hasattr(item, 'Comment'):
+            symbol.__doc__ = item.Comment[0].text
+
+        yield symbol
+    else:
+        # hack to just get first-level sub-items, including subclass (=extended
+        # type) items
+        sub_items = list(set(sub_item[1] for sub_item in item.walk()
+                             if len(sub_item) > 1))
+        sub_items.sort(key=lambda item: item.bit_offset)
+
+        for sub_item in sub_items:
+            yield from tmc_to_symbols(sub_item, data_area=data_area,
+                                      parent_name=symbol_name,
+                                      additional_offset=offset,
+                                      )
+
+        bit_size = int(item.BitSize[0].bit_size)
+        if (bit_size % 8) != 0:
+            raise ValueError('Symbol bits?')
+
+        yield ComplexSymbol(
+            name=item.name,
+            data_area=data_area,
+            offset=offset,
+            data_type=AdsDataType.BIGTYPE,
+            array_length=data_type.length,
+            struct_size=bit_size // 8,
+        )
+
+
+class BasicSymbol(Symbol):
+    """
+    A symbol holding a basic data type value.
+
+    This includes support for scalars and arrays of the following types:
+    INT8 UINT8 INT16 UINT16 INT32 UINT32 INT64 UINT64 REAL32 REAL64 STRING
+    WSTRING REAL80 BIT
+
+    Notably, this does not include BIGTYPE, which is represented by
+    :class:`ComplexSymbol`.
+    """
+    ctypes_data_type: typing.Union[typing.Type[ctypes.Array],
+                                   typing.Type[ctypes._SimpleCData]]
+
+    def _configure_data_type(self):
+        ctypes_base_type = self.data_type.ctypes_type
+        if self.array_length > 1:
+            self.ctypes_data_type = self.array_length * ctypes_base_type
+        else:
+            self.ctypes_data_type = ctypes_base_type
+        self.size = ctypes.sizeof(self.ctypes_data_type)
+
+
+class ComplexSymbol(Symbol):
+    def __init__(self, *, struct_size: int, **kwargs):
+        self._struct_size = struct_size
+        super().__init__(**kwargs)
+
+    def _configure_data_type(self):
+        self.size = self._struct_size * self.array_length
+        self.ctypes_data_type = (
+            (ctypes.c_ubyte * self._struct_size) * self.array_length
+        )
+
+
 class DataArea:
     memory: PlcMemory
     index_group: constants.AdsIndexGroup
@@ -158,16 +214,10 @@ class DataArea:
 
 
 class TmcDataArea(DataArea):
-    def add_symbol(self, tmc_symbol: 'pytmc.parser.Symbol'):
-        try:
-            symbol = Symbol.from_tmc_symbol(tmc_symbol,
-                                            data_area=self)  # type: Symbol
-        except ValueError as ex:
-            logger.debug(str(ex))
-            return
-
-        self.symbols[tmc_symbol.name] = symbol
-        return symbol
+    def add_symbols(self, tmc_symbol: 'pytmc.parser.Symbol'):
+        for symbol in tmc_to_symbols(tmc_symbol,
+                                     data_area=self):  # type: Symbol
+            self.symbols[symbol.name] = symbol
 
     def __repr__(self):
         return f'<{self.__class__.__name__} {self.area_type}>'
@@ -196,6 +246,7 @@ class TmcTypes(enum.Enum):
     LREAL = AdsDataType.REAL64
 
     STRING = AdsDataType.STRING
+    COMPLEX = AdsDataType.BIGTYPE
 
 
 class DataAreaIndexGroup(enum.Enum):
@@ -274,7 +325,7 @@ class TmcDatabase(Database):
                                          memory_size=byte_size))
 
             for sym in tmc_area.find(pytmc.parser.Symbol):
-                area.add_symbol(sym)
+                area.add_symbols(sym)
 
         self._configure_plc_memory_area()
 
