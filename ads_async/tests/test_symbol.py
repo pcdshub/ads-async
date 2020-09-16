@@ -17,14 +17,23 @@ def memory():
     return ads_async.symbols.PlcMemory(1000)
 
 
-def test_symbol(memory):
-    sym = ads_async.symbols.Symbol(
-        data_area=None,
+@pytest.fixture(scope='function')
+def data_area(memory):
+    return ads_async.symbols.DataArea(
+        memory=memory,
+        index_group=ads_async.constants.AdsIndexGroup.PLC_DATA_AREA,
+        area_type='testing',
+    )
+
+
+def test_symbol(data_area):
+    sym = ads_async.symbols.SimpleSymbol(
+        data_area=data_area,
         name='test',
         offset=0,
         data_type=ads_async.constants.AdsDataType.INT32,
-        array_length=1,
-        memory=memory)
+        array_length=1
+    )
 
     value = 0x2345
     sym.write(value)
