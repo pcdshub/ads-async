@@ -7,14 +7,14 @@ epicsEnvSet("LOCATION", "test" )
 epicsEnvSet("IOCSH_PS1", "$(IOCNAME)> " )
 
 # Run common startup commands for linux soft IOC's
-< /reg/d/iocCommon/All/pre_linux.cmd
+# < /reg/d/iocCommon/All/pre_linux.cmd
 
 # Register all support components
 dbLoadDatabase("$(ADS_IOC_TOP)/dbd/adsIoc.dbd")
 adsIoc_registerRecordDeviceDriver(pdbbase)
 
 epicsEnvSet("ASYN_PORT",        "ASYN_PLC")
-epicsEnvSet("IPADDR",           "host.docker.internal")
+epicsEnvSet("IPADDR",           "localhost")
 epicsEnvSet("AMSID",            "172.21.92.73.1.1")
 epicsEnvSet("AMS_PORT",         "851")
 epicsEnvSet("ADS_MAX_PARAMS",   "10000")
@@ -70,16 +70,16 @@ save_restoreSet_DatedBackupFiles( 1 )
 set_pass0_restoreFile( "info_positions.sav" )
 set_pass1_restoreFile( "info_settings.sav" )
 
-cd "$(IOC_TOP)/autosave"
-makeAutosaveFiles()
+# cd "$(IOC_TOP)/autosave"
+# makeAutosaveFiles()
 cd "$(IOC_TOP)"
 
 # Initialize the IOC and start processing records
 iocInit()
 
 # Start autosave backups
-create_monitor_set( "info_positions.req", 10, "" )
-create_monitor_set( "info_settings.req", 60, "" )
+create_monitor_set( "info_positions.req", 5, "" )
+create_monitor_set( "info_settings.req", 5, "" )
 
 # All IOCs should dump some common info after initial startup.
 < /reg/d/iocCommon/All/post_linux.cmd

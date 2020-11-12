@@ -9,5 +9,5 @@ epicsEnvSet("MOTOR","/reg/g/pcds/epics//R7.0.2-2.0/modules/motor/R6.9-ess-0.0.1"
 epicsEnvSet("ASYN","/reg/g/pcds/epics//R7.0.2-2.0/modules/asyn/R4.35-0.0.1")
 epicsEnvSet("ADS","/reg/g/pcds/epics//R7.0.2-2.0/modules/twincat-ads/R2.0.0-0.0.5")
 epicsEnvSet("EPICS_BASE","/reg/g/pcds/epics//base/R7.0.2-2.0")
-epicsEnvSet("IOC_TOP", "/ioc")
-epicsEnvSet("IOC_DATA", "/ioc")
+epicsEnvSet("IOC_TOP", "/cds/home/k/klauer/Repos/ads-async/test-ioc")
+epicsEnvSet("IOC_DATA", "/cds/home/k/klauer/Repos/ads-async/test-ioc")
