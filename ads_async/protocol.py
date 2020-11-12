@@ -348,7 +348,7 @@ class AcceptedClient:
         symbol_entry = structs.AdsSymbolEntry(
             index_group=index_group,  # type: ignore
             index_offset=symbol.offset,
-            size=symbol.size,
+            size=symbol.byte_size,
             data_type=symbol.data_type,
             flags=constants.AdsSymbolFlag(0),  # TODO symbol.flags
             name=symbol.name,

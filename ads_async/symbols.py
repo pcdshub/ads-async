@@ -127,23 +127,27 @@ class Symbol:
     def write(self, value):
         if not isinstance(value, ctypes._SimpleCData):
             if isinstance(value, bytes):
+                byte_value = value
                 consumed, value = structs.deserialize_data(
                     data_type=self.data_type, data=value,
                     length=self.array_length,
                 )
             else:
                 value = self.ctypes_data_type(value)
+                byte_value = bytes(value)
+        else:
+            byte_value = bytes(value)
 
-        logger.debug('Symbol %s write %s', self, value)
+        logger.debug('Symbol %s write %s (%s)', self, value, byte_value)
         if self.bit_offset is not None:
             return self.memory.write_bits(self.offset,
                                           self.bit_offset.offset,
                                           self.bit_offset.size,
-                                          bytes(value))
+                                          byte_value)
 
         offset = (self.offset if not self.pointer
                   else self._dereference_pointer())
-        return self.memory.write(offset, bytes(value))
+        return self.memory.write(offset, byte_value)
 
     def _dereference_pointer(self) -> int:
         if not self.pointer:
