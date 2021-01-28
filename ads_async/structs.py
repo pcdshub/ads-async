@@ -463,6 +463,27 @@ class AdsNotificationAttrib(_AdsStructBase):
     _dict_mapping = {'_transmission_mode': 'transmission_mode'}
 
 
+class AdsNotificationLogMessage(_AdsStructBase):
+    _fields_ = [
+        ('timestamp', ctypes.c_uint64),
+        ('unknown', ctypes.c_uint32),
+        ('ams_port', ctypes.c_uint32),
+        ('_sender_name', ctypes.c_ubyte * 16),
+        ('message_length', ctypes.c_uint32),
+        # message
+    ]
+
+    _payload_fields = [
+        ('message', '{self.message_length}s', 0, bytes, serialize),
+    ]
+
+    _dict_mapping = {'_sender_name': 'sender_name'}
+
+    @property
+    def sender_name(self):
+        return bytes(self._sender_name).split(b'\0')[0]
+
+
 class AdsNotificationHeader(_AdsStructBase):
     """This structure is also passed to the callback function."""
 
@@ -483,6 +504,7 @@ class AdsNotificationHeader(_AdsStructBase):
         ('sample_size', ctypes.c_uint32),
     ]
 
+
 # *
 #  @brief Type definition of the callback function required by the
 #  AdsSyncAddDeviceNotificationReqEx() function.
@@ -493,6 +515,104 @@ class AdsNotificationHeader(_AdsStructBase):
 # /
 # typedef void (* PAdsNotificationFuncEx)(const AmsAddr* pAddr, const
 # AdsNotificationHeader* pNotification, ctypes.c_uint32 hUser);
+
+
+class AdsNotificationSample(_AdsStructBase):
+    _fields_ = [
+        # Handle for the notification. Is specified when the notification is
+        # defined.
+        ('notification_handle', ctypes.c_uint32),
+
+        # Number of bytes transferred.
+        ('sample_size', ctypes.c_uint32),
+        ('_data_start', ctypes.c_ubyte * 0),
+    ]
+
+    _payload_fields = [
+        ('data', '{self.sample_size}s', 0, bytes, serialize),
+    ]
+    _dict_mapping = {'_data_start': 'data'}
+
+    def as_log_message(self) -> AdsNotificationLogMessage:
+        return AdsNotificationLogMessage.from_buffer_extended(bytearray(self.data))
+
+
+class AdsStampHeader(_AdsStructBase):
+    _fields_ = [
+        # Contains a 64-bit value representing the number of 100-nanosecond
+        # intervals since January 1, 1601 (UTC).
+        ('timestamp', ctypes.c_uint64),
+
+        # Number of bytes transferred.
+        ('num_samples', ctypes.c_uint32),
+        ('_sample_start', ctypes.c_ubyte * 0),
+    ]
+
+    _dict_mapping = {'_sample_start': 'samples'}
+
+    @classmethod
+    def from_buffer_extended(cls: typing.Type[T_AdsStructure],
+                             buf: typing.Union[memoryview, bytearray]
+                             ) -> T_AdsStructure:
+
+        new_struct = cls.from_buffer(buf)
+        payload_buf = memoryview(buf)[ctypes.sizeof(cls):]
+
+        new_struct.byte_size = 0
+        new_struct.samples = []
+        for idx in range(new_struct.num_samples):
+            sample = AdsNotificationSample.from_buffer_extended(payload_buf)
+            print('\n' * 3, sample.as_log_message())
+            new_struct.samples.append(sample)
+            consumed = (
+                ctypes.sizeof(AdsNotificationSample) + sample.sample_size
+            )
+            new_struct.byte_size += consumed
+            payload_buf = payload_buf[consumed:]
+
+        return new_struct
+
+    # def __repr__(self):
+    #     return (
+    #         f"<{self.__class__.__name__} timestamp={self.timestamp} "
+    #         f"num_samples={self.num_samples} samples={self.samples}>"
+    #     )
+
+
+@use_for_request(constants.AdsCommandId.DEVICE_NOTIFICATION)
+@use_for_response(constants.AdsCommandId.DEVICE_NOTIFICATION)
+class AdsNotificationStream(_AdsStructBase):
+    """This structure is also passed to the callback function."""
+
+    _fields_ = [
+        ('length', ctypes.c_uint32),
+        ('num_stamps', ctypes.c_uint32),
+        ('_stamp_start', ctypes.c_ubyte * 0),
+    ]
+
+    _dict_mapping = {'_stamp_start': 'stamps'}
+
+    @classmethod
+    def from_buffer_extended(cls: typing.Type[T_AdsStructure],
+                             buf: typing.Union[memoryview, bytearray]
+                             ) -> T_AdsStructure:
+
+        new_struct = cls.from_buffer(buf)
+        payload_buf = memoryview(buf)[ctypes.sizeof(cls):]
+
+        new_struct.stamps = []
+        for stamp in range(new_struct.num_stamps):
+            stamp = AdsStampHeader.from_buffer_extended(payload_buf)
+            new_struct.stamps.append(stamp)
+            payload_buf = payload_buf[stamp.byte_size:]
+
+        return new_struct
+
+    # def __repr__(self):
+    #     return (
+    #         f"<{self.__class__.__name__} length={self.length} "
+    #         f"num_stamps={self.num_stamps} stamps={self.stamps}>"
+    #     )
 
 
 class AdsSymbolEntry(_AdsStructBase):
