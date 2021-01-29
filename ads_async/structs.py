@@ -28,14 +28,14 @@ def _use_for(key: str, command_id: constants.AdsCommandId,
     return cls
 
 
-def use_for_response(command_id: constants.AdsCommandId):
+def use_for_response(command_id: constants.AdsCommandId) -> T_AdsStructure:
     """
     Decorator marking a class to be used for a specific AdsCommand response.
     """
     return functools.partial(_use_for, 'response', command_id)
 
 
-def use_for_request(command_id: constants.AdsCommandId):
+def use_for_request(command_id: constants.AdsCommandId) -> T_AdsStructure:
     """
     Decorator marking a class to be used for a specific AdsCommand request.
     """
