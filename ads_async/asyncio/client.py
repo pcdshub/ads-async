@@ -88,6 +88,7 @@ class AsyncioClient:
         )
         if response_handler is not None:
             self._response_handlers[invoke_id].append(response_handler)
+
         self.writer.write(bytes_to_send)
         await self.writer.drain()
         return invoke_id
@@ -210,6 +211,13 @@ class AsyncioClient:
             ),
             port=port,
         )
+
+    async def prune_unknown_notifications(self):
+        """Prune all unknown notification IDs by unregistering each of them."""
+        for source, handle in self.client.unknown_notifications:
+            _, port = source
+            await self.send(self.client.remove_notification(handle),
+                            port=port)
 
 
 class Notification(utils.CallbackHandler):
@@ -381,6 +389,7 @@ if __name__ == '__main__':
                                client_net_id='172.21.148.164.1.1',
                                )
         await asyncio.sleep(1)  # connection event
+        await client.prune_unknown_notifications()
         async for message in client.enable_log_system():
             print('log system notification', message)
 

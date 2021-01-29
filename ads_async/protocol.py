@@ -387,6 +387,11 @@ class ConnectionBase:
             Serialized data to send.
         """
         invoke_id = self._invoke_counter()
+        assert len(items) == 1  # TODO
+
+        item, = items
+        self.id_to_request[invoke_id] = item
+
         items, bytes_to_send = request_to_wire(
             *items,
             target=structs.AmsAddr(
@@ -410,7 +415,6 @@ class ConnectionBase:
                 extra['counter'] = (idx, len(items))
                 self.log.debug('%s', item, extra=extra)
 
-        self.id_to_request[invoke_id] = items
         return invoke_id, bytes_to_send
 
 
@@ -796,6 +800,7 @@ class Client(ConnectionBase):
                  ):
         self.server_net_id = server_net_id
         self.client_net_id = client_net_id
+        self.unknown_notifications = set()
         tags = {
             'role': 'CLIENT',
             'our_address': address,
@@ -808,6 +813,48 @@ class Client(ConnectionBase):
             f'<{self.__class__.__name__} address={self.address} '
             f'server_host={self.server_host}>'
         )
+
+    def handle_command(self, header: structs.AoEHeader,
+                       response: Optional[structs._AdsStructBase]):
+        """
+        Top-level command dispatcher.
+
+        First stop to determine which method will handle the given command.
+
+        Parameters
+        ----------
+        header : structs.AoEHeader
+            The request header.
+
+        response : structs._AdsStructBase or None
+            The response itself.  May be optional depending on the header's
+            AdsCommandId.
+
+        Returns
+        -------
+        response : list
+            List of commands or byte strings to be serialized.
+        """
+        command = header.command_id
+        self.log.debug('Handling %s', command,
+                       extra={'sequence': header.invoke_id})
+
+        if hasattr(response, 'index_group'):
+            keys = [(command, response.index_group),  # type: ignore
+                    (command, None)]
+        else:
+            keys = [(command, None)]
+
+        for key in keys:
+            try:
+                handler = self._handlers[key]
+            except KeyError:
+                ...
+            else:
+                request = self.id_to_request.pop(header.invoke_id, None)
+                return handler(self, request, header, response)
+
+        raise MissingHandlerError(f'No handler defined for command {keys}')
 
     def _get_symbol_by_request_name(self, request) -> Symbol:
         """Get symbol by a request with a name as its payload."""
@@ -831,16 +878,31 @@ class Client(ConnectionBase):
                                 request=request) from None
 
     @_command_handler(AdsCommandId.ADD_DEVICE_NOTIFICATION)
-    def _add_notification(self, header: structs.AoEHeader,
-                          response: structs.AoENotificationHandleResponse):
-        ...
-        # self.handle_to_notification
+    def _add_notification(
+            self,
+            request: structs.AdsAddDeviceNotificationRequest,
+            header: structs.AoEHeader,
+            response: structs.AoENotificationHandleResponse,
+    ):
+        key = (tuple(header.source), request.handle)
+        if key in self.unknown_notifications:
+            self.unknown_notifications.remove(key)
 
     @_command_handler(AdsCommandId.DEL_DEVICE_NOTIFICATION)
     def _delete_notification(
-            self, header: structs.AoEHeader,
-            response: structs.AoEResponseHeader):  # TODO response?
-        self.handle_to_notification.pop(response.handle)
+            self,
+            request: structs.AdsDeleteDeviceNotificationRequest,
+            header: structs.AoEHeader,
+            response: structs.AoEResponseHeader,
+    ):
+        if request is None:
+            return
+
+        self.handle_to_notification.pop(request.handle, None)
+
+        key = (tuple(header.source), request.handle)
+        if key in self.unknown_notifications:
+            self.unknown_notifications.remove(key)
 
     # @_command_handler(AdsCommandId.WRITE_CONTROL)
     # def _write_control(self, header: structs.AoEHeader,
@@ -874,7 +936,8 @@ class Client(ConnectionBase):
     #                        response: structs.AdsReadWriteResponse):
     #     ...
 
-    # @_command_handler(AdsCommandId.READ_WRITE, AdsIndexGroup.SYM_INFOBYNAMEEX)
+    # @_command_handler(AdsCommandId.READ_WRITE,
+    #                   AdsIndexGroup.SYM_INFOBYNAMEEX)
     # def _read_write_info(self, header: structs.AoEHeader,
     #                      response: structs.AdsReadWriteResponse):
     #     ...
@@ -898,7 +961,9 @@ class Client(ConnectionBase):
     #     ...
 
     @_command_handler(AdsCommandId.DEVICE_NOTIFICATION)
-    def _device_notification(self, header: structs.AoEHeader,
+    def _device_notification(self,
+                             request,
+                             header: structs.AoEHeader,
                              stream: structs.AdsNotificationStream):
         for stamp in stream.stamps:
             timestamp = stamp.timestamp
@@ -907,8 +972,11 @@ class Client(ConnectionBase):
                     handler = self.handle_to_notification[
                         sample.notification_handle]
                 except KeyError:
-                    self.log.debug('No handler for notification id %d?',
-                                   sample.notification_handle)
+                    self.log.debug('No handler for notification id %s %d?',
+                                   header.source, sample.notification_handle)
+                    self.unknown_notifications.add(
+                        (tuple(header.source), sample.notification_handle)
+                    )
                 else:
                     handler.process(header=header, timestamp=timestamp,
                                     sample=sample)
@@ -954,6 +1022,19 @@ class Client(ConnectionBase):
             int(mode),
             max_delay,
             cycle_time,
+        )
+
+    def remove_notification(self, handle: int):
+        """
+        Remove a notification given its handle.
+
+        Parameters
+        -----------
+        handle : int
+            The notification handle.
+        """
+        return structs.AdsDeleteDeviceNotificationRequest(
+            handle=handle
         )
 
 

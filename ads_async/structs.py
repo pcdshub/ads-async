@@ -358,6 +358,9 @@ class AmsAddr(_AdsStructBase):
             return f'{self.net_id}:{self.port.value}({self.port.name})'
         return f'{self.net_id}:{self.port}'
 
+    def __iter__(self):
+        return iter((repr(self.net_id), self.port))
+
 
 class AdsVersion(_AdsStructBase):
     """Contains the version number, revision number and build number."""
@@ -534,7 +537,10 @@ class AdsNotificationSample(_AdsStructBase):
     _dict_mapping = {'_data_start': 'data'}
 
     def as_log_message(self) -> AdsNotificationLogMessage:
-        return AdsNotificationLogMessage.from_buffer_extended(bytearray(self.data))
+        """Try to convert the raw message to a log message."""
+        return AdsNotificationLogMessage.from_buffer_extended(
+            bytearray(self.data)
+        )
 
 
 class AdsNotificationStampHeader(_AdsStructBase):
@@ -562,7 +568,7 @@ class AdsNotificationStampHeader(_AdsStructBase):
         new_struct.samples = []
         for idx in range(new_struct.num_samples):
             sample = AdsNotificationSample.from_buffer_extended(payload_buf)
-            print('\n' * 3, sample.as_log_message())
+            # print('\n' * 3, sample.as_log_message())
             new_struct.samples.append(sample)
             consumed = (
                 ctypes.sizeof(AdsNotificationSample) + sample.sample_size
@@ -571,12 +577,6 @@ class AdsNotificationStampHeader(_AdsStructBase):
             payload_buf = payload_buf[consumed:]
 
         return new_struct
-
-    # def __repr__(self):
-    #     return (
-    #         f"<{self.__class__.__name__} timestamp={self.timestamp} "
-    #         f"num_samples={self.num_samples} samples={self.samples}>"
-    #     )
 
 
 @use_for_request(constants.AdsCommandId.DEVICE_NOTIFICATION)
@@ -602,17 +602,13 @@ class AdsNotificationStream(_AdsStructBase):
 
         new_struct.stamps = []
         for stamp in range(new_struct.num_stamps):
-            stamp = AdsNotificationStampHeader.from_buffer_extended(payload_buf)
+            stamp = AdsNotificationStampHeader.from_buffer_extended(
+                payload_buf
+            )
             new_struct.stamps.append(stamp)
             payload_buf = payload_buf[stamp.byte_size:]
 
         return new_struct
-
-    # def __repr__(self):
-    #     return (
-    #         f"<{self.__class__.__name__} length={self.length} "
-    #         f"num_stamps={self.num_stamps} stamps={self.stamps}>"
-    #     )
 
 
 class AdsSymbolEntry(_AdsStructBase):
