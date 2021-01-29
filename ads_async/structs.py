@@ -537,7 +537,7 @@ class AdsNotificationSample(_AdsStructBase):
         return AdsNotificationLogMessage.from_buffer_extended(bytearray(self.data))
 
 
-class AdsStampHeader(_AdsStructBase):
+class AdsNotificationStampHeader(_AdsStructBase):
     _fields_ = [
         # Contains a 64-bit value representing the number of 100-nanosecond
         # intervals since January 1, 1601 (UTC).
@@ -602,7 +602,7 @@ class AdsNotificationStream(_AdsStructBase):
 
         new_struct.stamps = []
         for stamp in range(new_struct.num_stamps):
-            stamp = AdsStampHeader.from_buffer_extended(payload_buf)
+            stamp = AdsNotificationStampHeader.from_buffer_extended(payload_buf)
             new_struct.stamps.append(stamp)
             payload_buf = payload_buf[stamp.byte_size:]
 

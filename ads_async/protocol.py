@@ -7,7 +7,7 @@ from typing import Optional
 
 from . import constants, log, structs, utils
 from .constants import (AdsCommandId, AdsError, AdsIndexGroup,
-                        AdsTransmissionMode, AoEHeaderFlag, AmsPort)
+                        AdsTransmissionMode, AmsPort, AoEHeaderFlag)
 from .symbols import Database, Symbol
 
 module_logger = logging.getLogger(__name__)
@@ -15,6 +15,10 @@ module_logger = logging.getLogger(__name__)
 # TODO: AMS can be over serial, UDP, etc. and not just TCP
 _AMS_HEADER_LENGTH = ctypes.sizeof(structs.AmsTcpHeader)
 _AOE_HEADER_LENGTH = ctypes.sizeof(structs.AoEHeader)
+
+
+class MissingHandlerError(RuntimeError):
+    ...
 
 
 def from_wire(
@@ -245,6 +249,7 @@ class ConnectionBase:
         self.recv_buffer = bytearray()
         self.handle_to_symbol = {}
         self.handle_to_notification = {}
+        self.id_to_request = {}
         self._handle_counter = utils.ThreadsafeCounter(
             initial_value=100,
             max_count=2 ** 32,  # handles are uint32
@@ -304,7 +309,7 @@ class ConnectionBase:
             else:
                 return handler(self, header, request)
 
-        raise RuntimeError(f'No handler defined for command {keys}')
+        raise MissingHandlerError(f'No handler defined for command {keys}')
 
     def received_data(self, data):
         """Hook for new data received over the socket."""
@@ -384,10 +389,14 @@ class ConnectionBase:
         invoke_id = self._invoke_counter()
         items, bytes_to_send = request_to_wire(
             *items,
-            target=structs.AmsAddr(structs.AmsNetId.from_string(self.server_net_id),
-                                   port),  # TODO: ours/theirs?
-            source=structs.AmsAddr(structs.AmsNetId.from_string(self.client_net_id),
-                                   self.our_port),
+            target=structs.AmsAddr(
+                structs.AmsNetId.from_string(self.server_net_id),
+                port
+            ),
+            source=structs.AmsAddr(
+                structs.AmsNetId.from_string(self.client_net_id),
+                self.our_port
+            ),
             invoke_id=invoke_id,
         )
 
@@ -401,7 +410,8 @@ class ConnectionBase:
                 extra['counter'] = (idx, len(items))
                 self.log.debug('%s', item, extra=extra)
 
-        return bytes_to_send
+        self.id_to_request[invoke_id] = items
+        return invoke_id, bytes_to_send
 
 
 class AcceptedClient(ConnectionBase):
@@ -823,158 +833,85 @@ class Client(ConnectionBase):
     @_command_handler(AdsCommandId.ADD_DEVICE_NOTIFICATION)
     def _add_notification(self, header: structs.AoEHeader,
                           response: structs.AoENotificationHandleResponse):
-        print('Add notification received', header, '\n', response)
+        ...
+        # self.handle_to_notification
 
     @_command_handler(AdsCommandId.DEL_DEVICE_NOTIFICATION)
     def _delete_notification(
             self, header: structs.AoEHeader,
-            request: structs.AdsDeleteDeviceNotificationRequest):
-        self.handle_to_notification.pop(request.handle)
-        return [structs.AoEResponseHeader(AdsError.NOERR)]
+            response: structs.AoEResponseHeader):  # TODO response?
+        self.handle_to_notification.pop(response.handle)
 
-    @_command_handler(AdsCommandId.WRITE_CONTROL)
-    def _write_control(self, header: structs.AoEHeader,
-                       request: structs.AdsWriteControlRequest):
-        raise NotImplementedError('write_control')
+    # @_command_handler(AdsCommandId.WRITE_CONTROL)
+    # def _write_control(self, header: structs.AoEHeader,
+    #                    response: structs.AdsWriteControlResponse):
+    #     ...
 
-    @_command_handler(AdsCommandId.WRITE, AdsIndexGroup.SYM_RELEASEHND)
-    def _write_release_handle(self, header: structs.AoEHeader,
-                              request: structs.AdsWriteRequest):
-        handle = request.handle
-        self.handle_to_symbol.pop(handle, None)
-        return [structs.AoEResponseHeader()]
+    # @_command_handler(AdsCommandId.WRITE, AdsIndexGroup.SYM_RELEASEHND)
+    # def _write_release_handle(self, header: structs.AoEHeader,
+    #                           response: structs.AdsWriteResponse):
+    #     ...
 
-    @_command_handler(AdsCommandId.WRITE, AdsIndexGroup.SYM_VALBYHND)
-    @_command_handler(AdsCommandId.WRITE, AdsIndexGroup.SYM_VALBYNAME)
-    def _write_value(self, header: structs.AoEHeader,
-                     request: structs.AdsWriteRequest):
-        if request.index_group == AdsIndexGroup.SYM_VALBYHND:
-            symbol = self._get_symbol_by_request_handle(request)
-        else:
-            symbol = self._get_symbol_by_request_name(request)
+    # @_command_handler(AdsCommandId.WRITE, AdsIndexGroup.SYM_VALBYHND)
+    # @_command_handler(AdsCommandId.WRITE, AdsIndexGroup.SYM_VALBYNAME)
+    # def _write_value(self, header: structs.AoEHeader,
+    #                  response: structs.AdsWriteResponse):
+    #     ...
 
-        old_value = repr(symbol.value)
-        symbol.write(request.data)
-        self.log.debug('Writing symbol %s old value: %s new value: %s',
-                       symbol, old_value, symbol.value)
-        return [structs.AoEResponseHeader()]
+    # @_command_handler(AdsCommandId.READ, AdsIndexGroup.SYM_VALBYHND)
+    # @_command_handler(AdsCommandId.READ, AdsIndexGroup.SYM_VALBYNAME)
+    # def _read_value(self, header: structs.AoEHeader,
+    #                 response: structs.AdsReadResponse):
+    #     ...
 
-    @_command_handler(AdsCommandId.READ, AdsIndexGroup.SYM_VALBYHND)
-    @_command_handler(AdsCommandId.READ, AdsIndexGroup.SYM_VALBYNAME)
-    def _read_value(self, header: structs.AoEHeader,
-                    request: structs.AdsReadRequest):
-        if request.index_group == AdsIndexGroup.SYM_VALBYHND:
-            symbol = self._get_symbol_by_request_handle(request)
-        else:
-            symbol = self._get_symbol_by_request_name(request)
+    # @_command_handler(AdsCommandId.READ)
+    # def _read_catchall(self, header: structs.AoEHeader,
+    #                    response: structs.AdsReadResponse):
+    #     ...
 
-        return [structs.AoEReadResponse(data=symbol.read())]
+    # @_command_handler(AdsCommandId.READ_WRITE, AdsIndexGroup.SYM_HNDBYNAME)
+    # def _read_write_handle(self, header: structs.AoEHeader,
+    #                        response: structs.AdsReadWriteResponse):
+    #     ...
 
-    @_command_handler(AdsCommandId.READ)
-    def _read_catchall(self, header: structs.AoEHeader,
-                       request: structs.AdsReadRequest):
-        try:
-            data_area = self.server.database.index_groups[request.index_group]
-        except KeyError:
-            raise ErrorResponse(
-                code=AdsError.DEVICE_INVALIDACCESS,  # TODO?
-                reason=f'Invalid index group: {request.index_group}',
-                request=request,
-            ) from None
-        else:
-            data = data_area.memory.read(request.index_offset, request.length)
-            return [structs.AoEReadResponse(data=data)]
+    # @_command_handler(AdsCommandId.READ_WRITE, AdsIndexGroup.SYM_INFOBYNAMEEX)
+    # def _read_write_info(self, header: structs.AoEHeader,
+    #                      response: structs.AdsReadWriteResponse):
+    #     ...
 
-    @_command_handler(AdsCommandId.READ_WRITE, AdsIndexGroup.SYM_HNDBYNAME)
-    def _read_write_handle(self, header: structs.AoEHeader,
-                           request: structs.AdsReadWriteRequest):
-        symbol = self._get_symbol_by_request_name(request)
-        handle = self._handle_counter()
-        self.handle_to_symbol[handle] = symbol
-        return [
-            structs.AoEHandleResponse(result=AdsError.NOERR, handle=handle)
-        ]
+    # @_command_handler(AdsCommandId.READ_WRITE, AdsIndexGroup.SUMUP_READ)
+    # def _read_write_sumup_read(self, header: structs.AoEHeader,
+    #                            response: structs.AdsReadWriteResponse):
+    #     ...
 
-    @_command_handler(AdsCommandId.READ_WRITE, AdsIndexGroup.SYM_INFOBYNAMEEX)
-    def _read_write_info(self, header: structs.AoEHeader,
-                         request: structs.AdsReadWriteRequest):
-        symbol = self._get_symbol_by_request_name(request)
-        index_group = symbol.data_area.index_group.value  # TODO
-        symbol_entry = structs.AdsSymbolEntry(
-            index_group=index_group,  # type: ignore
-            index_offset=symbol.offset,
-            size=symbol.byte_size,
-            data_type=symbol.data_type,
-            flags=constants.AdsSymbolFlag(0),  # TODO symbol.flags
-            name=symbol.name,
-            type_name=symbol.data_type_name,
-            comment=symbol.__doc__ or '',
-        )
-        return [structs.AoEReadResponse(data=symbol_entry)]
+    # @_command_handler(AdsCommandId.READ_WRITE)
+    # def _read_write_catchall(self, header: structs.AoEHeader,
+    #                          response: structs.AdsReadWriteResponse):
+    #     ...
 
-    @_command_handler(AdsCommandId.READ_WRITE, AdsIndexGroup.SUMUP_READ)
-    def _read_write_sumup_read(self, header: structs.AoEHeader,
-                               request: structs.AdsReadWriteRequest):
-        read_size = ctypes.sizeof(structs.AdsReadRequest)
-        count = len(request.data) // read_size
-        self.log.debug('Request to read %d items', count)
-        buf = bytearray(request.data)
+    # @_command_handler(AdsCommandId.READ_DEVICE_INFO)
+    # def _read_device_info(self, header: structs.AoEHeader, response):
+    #     ...
 
-        results = []
-        data = []
-
-        # Handle these as normal reads by making a fake READ header:
-        read_header = copy.copy(header)
-        read_header.command_id = AdsCommandId.READ
-
-        for idx in range(count):
-            read_req = structs.AdsReadRequest.from_buffer(buf)
-            read_response = self.handle_command(read_header, read_req)
-            self.log.debug('[%d] %s -> %s', idx + 1, read_req, read_response)
-            if read_response is not None:
-                results.append(read_response[0].result)
-                data.append(read_response[0].data)
-            else:
-                # TODO (?)
-                results.append(AdsError.DEVICE_ERROR)
-                data.append(bytes(read_req.length))
-            buf = buf[read_size:]
-
-        if request.index_offset != 0:
-            to_send = [ctypes.c_uint32(res) for res in results] + data
-        else:
-            to_send = data
-
-        return [structs.AoEReadResponse(
-            data=b''.join(structs.serialize(res) for res in to_send)
-        )]
-
-    @_command_handler(AdsCommandId.READ_WRITE)
-    def _read_write_catchall(self, header: structs.AoEHeader,
-                             request: structs.AdsReadWriteRequest):
-        ...
-
-    @_command_handler(AdsCommandId.READ_DEVICE_INFO)
-    def _read_device_info(self, header: structs.AoEHeader, request):
-        return [
-            structs.AoEResponseHeader(AdsError.NOERR),
-            structs.AdsDeviceInfo(*self.server.version, name=self.server.name)
-        ]
-
-    @_command_handler(AdsCommandId.READ_STATE)
-    def _read_state(self, header: structs.AoEHeader, request):
-        return [
-            structs.AoEResponseHeader(AdsError.NOERR),
-            structs.AdsReadStateResponse(self.server.ads_state,
-                                         0  # TODO: find docs
-                                         )
-        ]
+    # @_command_handler(AdsCommandId.READ_STATE)
+    # def _read_state(self, header: structs.AoEHeader, response):
+    #     ...
 
     @_command_handler(AdsCommandId.DEVICE_NOTIFICATION)
     def _device_notification(self, header: structs.AoEHeader,
-                             item: structs.AdsDeviceInfo):
-        print('device notification', header, item)
-        ...
+                             stream: structs.AdsNotificationStream):
+        for stamp in stream.stamps:
+            timestamp = stamp.timestamp
+            for sample in stamp.samples:
+                try:
+                    handler = self.handle_to_notification[
+                        sample.notification_handle]
+                except KeyError:
+                    self.log.debug('No handler for notification id %d?',
+                                   sample.notification_handle)
+                else:
+                    handler.process(header=header, timestamp=timestamp,
+                                    sample=sample)
 
     def add_notification_by_index(
         self,
