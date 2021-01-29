@@ -407,7 +407,7 @@ if __name__ == '__main__':
         # from previous sessions:
         await asyncio.sleep(1.0)
         await client.prune_unknown_notifications()
-        async for header, timestamp, sample in client.enable_log_system():
+        async for header, _, sample in client.enable_log_system():
             try:
                 message = sample.as_log_message()
             except Exception:
