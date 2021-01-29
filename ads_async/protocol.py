@@ -795,7 +795,7 @@ class Client(ConnectionBase):
     def __init__(self,
                  server_host: typing.Tuple[str, int],
                  server_net_id: str,
-                 client_net_id: str,
+                 client_net_id: typing.Optional[str],
                  address: typing.Tuple[str, int],
                  ):
         self.server_net_id = server_net_id

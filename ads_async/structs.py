@@ -473,7 +473,7 @@ class AdsNotificationLogMessage(_AdsStructBase):
         ('ams_port', ctypes.c_uint32),
         ('_sender_name', ctypes.c_ubyte * 16),
         ('message_length', ctypes.c_uint32),
-        # message
+        # (message here)
     ]
 
     _payload_fields = [

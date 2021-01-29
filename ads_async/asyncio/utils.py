@@ -92,7 +92,6 @@ class CallbackExecutor:
             callback, args, kwargs = await self.callbacks.async_get()
             if inspect.iscoroutinefunction(callback):
                 try:
-                    print(callback, args, kwargs)
                     await callback(*args, **kwargs)
                 except Exception:
                     self.log.exception('Callback failure')
