@@ -47,7 +47,7 @@ class Notification(utils.CallbackHandler):
             )
 
     def process(self, header, timestamp, sample):
-        self.log.debug("Notification update [%d]: %s", timestamp, sample)
+        self.log.debug("Notification update [%s]: %s", timestamp, sample)
         notification = dict(header=header, timestamp=timestamp, sample=sample)
         super().process(self, **notification)
         self.most_recent_notification = notification
@@ -396,8 +396,6 @@ class AsyncioClient:
 
 
 if __name__ == '__main__':
-    server = None
-
     async def test():
         client = AsyncioClient(server_host=('localhost', 48898),
                                server_net_id='172.21.148.227.1.1',

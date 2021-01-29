@@ -5,7 +5,7 @@ import ipaddress
 import struct
 import typing
 
-from . import constants
+from . import constants, utils
 from .constants import AoEHeaderFlag
 
 T_AdsStructure = typing.TypeVar('T_AdsStructure', bound='_AdsStructBase')
@@ -468,7 +468,7 @@ class AdsNotificationAttrib(_AdsStructBase):
 
 class AdsNotificationLogMessage(_AdsStructBase):
     _fields_ = [
-        ('timestamp', ctypes.c_uint64),
+        ('_timestamp', ctypes.c_uint64),
         ('unknown', ctypes.c_uint32),
         ('ams_port', ctypes.c_uint32),
         ('_sender_name', ctypes.c_ubyte * 16),
@@ -480,7 +480,14 @@ class AdsNotificationLogMessage(_AdsStructBase):
         ('message', '{self.message_length}s', 0, bytes, serialize),
     ]
 
-    _dict_mapping = {'_sender_name': 'sender_name'}
+    _dict_mapping = {
+        '_sender_name': 'sender_name',
+        '_timestamp': 'timestamp',
+    }
+
+    @property
+    def timestamp(self):
+        return utils.get_datetime_from_timestamp(self._timestamp)
 
     @property
     def sender_name(self):
@@ -501,12 +508,19 @@ class AdsNotificationHeader(_AdsStructBase):
 
         # Contains a 64-bit value representing the number of 100-nanosecond
         # intervals since January 1, 1601 (UTC).
-        ('timestamp', ctypes.c_uint64),
+        ('_timestamp', ctypes.c_uint64),
 
         # Number of bytes transferred.
         ('sample_size', ctypes.c_uint32),
     ]
 
+    _dict_mapping = {
+        '_timestamp': 'timestamp',
+    }
+
+    @property
+    def timestamp(self):
+        return utils.get_datetime_from_timestamp(self._timestamp)
 
 # *
 #  @brief Type definition of the callback function required by the
@@ -547,14 +561,21 @@ class AdsNotificationStampHeader(_AdsStructBase):
     _fields_ = [
         # Contains a 64-bit value representing the number of 100-nanosecond
         # intervals since January 1, 1601 (UTC).
-        ('timestamp', ctypes.c_uint64),
+        ('_timestamp', ctypes.c_uint64),
 
         # Number of bytes transferred.
         ('num_samples', ctypes.c_uint32),
         ('_sample_start', ctypes.c_ubyte * 0),
     ]
 
-    _dict_mapping = {'_sample_start': 'samples'}
+    _dict_mapping = {
+        '_sample_start': 'samples',
+        '_timestamp': 'timestamp',
+    }
+
+    @property
+    def timestamp(self):
+        return utils.get_datetime_from_timestamp(self._timestamp)
 
     @classmethod
     def from_buffer_extended(cls: typing.Type[T_AdsStructure],
@@ -670,10 +691,11 @@ class AdsSymbolEntry(_AdsStructBase):
     index_group = _enum_property('_index_group',  # type: ignore
                                  constants.AdsIndexGroup,
                                  strict=False)
-    _dict_mapping = {'_flags': 'flags',
-                     '_data_type': 'data_type',
-                     '_index_group': 'index_group',
-                     }
+    _dict_mapping = {
+        '_flags': 'flags',
+        '_data_type': 'data_type',
+        '_index_group': 'index_group',
+    }
 
     def __init__(self,
                  index_group: constants.AdsIndexGroup,
