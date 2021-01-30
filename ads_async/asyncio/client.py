@@ -1,5 +1,6 @@
 import asyncio
 import collections
+import json
 import typing
 from typing import Optional
 
@@ -395,6 +396,44 @@ class AsyncioClient:
                             port=port)
 
 
+def to_logstash(header: structs.AoEHeader,
+                message: structs.AdsNotificationLogMessage) -> dict:
+    custom_json = {
+        "port_name": message.sender_name.decode('ascii'),
+        "ams_port": message.ams_port,
+        "source": repr(header.source),
+        "identifier": message.unknown,
+    }
+
+    # From:
+    # AdsNotificationLogMessage(timestamp=datetime.datetime,
+    #                           unknown=84, ams_port=500,
+    #                           sender_name=b'TCNC',
+    #                           message_length=114, message=b'\'Axis
+    #                           1\' (Axis-ID: 1): The axis needs the
+    #                           "Feed Forward Permission" for forward
+    #                           positioning (error-code: 0x4358) !')
+    # To:
+    # (f'{"schema":"twincat-event-0","ts":{twincat_now},"plc":"LogTest",'
+    #   '"severity":4,"id":0,'
+    #   '"event_class":"C0FFEEC0-FFEE-COFF-EECO-FFEEC0FFEEC0",'
+    #   '"msg":"Critical (Log system test.)",'
+    #   '"source":"pcds_logstash.testing.fbLogger/Debug",'
+    #   '"event_type":3,"json":"{}"}'
+    #   ),
+    return {
+        "schema": "twincat-event-0",
+        "ts": message.timestamp.timestamp(),
+        "severity": 0,  # hmm
+        "id": 0,  # hmm
+        "event_class": "C0FFEEC0-FFEE-COFF-EECO-FFEEC0FFEEC0",
+        "msg": message.message.decode('latin-1'),
+        "source": "logging.aggregator/Translator",
+        "event_type": 0,  # hmm
+        "json": json.dumps(custom_json),
+    }
+
+
 if __name__ == '__main__':
     async def test():
         client = AsyncioClient(server_host=('localhost', 48898),
@@ -415,7 +454,8 @@ if __name__ == '__main__':
                                      sample)
                 continue
 
-            client.log.info("Log message %s", message)
+            client.log.info("Log message %s ==> %s", message,
+                            to_logstash(header, message))
 
     from .. import log
     log.configure(level='DEBUG')
