@@ -1,5 +1,6 @@
 import asyncio
 import collections
+import ctypes
 import json
 import typing
 from typing import Optional
@@ -35,11 +36,12 @@ class Notification(utils.CallbackHandler):
         self.most_recent_notification = None
         # self.needs_reactivation = False
 
-    async def _response_handler(self, header, response):
-        # if isinstance(response, structs.AoENotificationHandleResponse):
-        response: structs.AoEReadResponse
+    async def _response_handler(
+        self,
+        header,
+        response: structs.AoENotificationHandleResponse
+    ):
         if response.result == constants.AdsError.NOERR:
-            response = response.as_handle_response()
             self.handle = response.handle
             self.log.debug(
                 "Notification initialized (handle=%d)", self.handle
@@ -216,6 +218,7 @@ class Symbol:
     name: Optional[str]
     info: Optional[structs.AdsSymbolEntry]
     handle: Optional[int]
+    string_encoding: str
 
     def __init__(self,
                  owner: 'AsyncioClient',
@@ -223,6 +226,7 @@ class Symbol:
                  index_group: Optional[int] = None,
                  index_offset: Optional[int] = None,
                  name: Optional[str] = None,
+                 string_encoding: str = 'utf-8',
                  ):
         self.owner = owner
         self.name = name
@@ -230,6 +234,7 @@ class Symbol:
         self.index_offset = index_offset
         self.info = None
         self.handle = None
+        self.string_encoding = string_encoding
 
     async def __aenter__(self):
         return self
@@ -266,10 +271,29 @@ class Symbol:
         if not self.is_initialized:
             await self.initialize()
 
-        return await self.owner.get_value_by_handle(
+        response = await self.owner.get_value_by_handle(
             self.handle,
             size=self.info.size,
         )
+
+        # TODO: move this handling up
+        ctypes_type = self.info.data_type.ctypes_type
+        _, data = structs.deserialize_data(
+            data_type=self.info.data_type,
+            length=self.info.size // ctypes.sizeof(ctypes_type),
+            data=response.data,
+        )
+
+        if self.info.data_type == constants.AdsDataType.STRING:
+            try:
+                data = b''.join(data)
+                data = data[:data.index(0)]
+                return str(data, self.string_encoding)
+            except ValueError:
+                # Fall through
+                ...
+
+        return data
 
 
 class AsyncioClient:
@@ -626,17 +650,20 @@ class AsyncioClient:
             self._symbols[name] = sym
         return sym
 
+    # TODO: single-use symbols? Or is persisting them through the
+    # connection OK? Use weakrefs?
+
     async def get_project_name(self) -> structs.AdsDeviceInfo:
-        """Get device information."""
-        sym = self.get_symbol_by_name(
+        """Get project name from global variable listing."""
+        return await self.get_symbol_by_name(
             "TwinCAT_SystemInfoVarList._AppInfo.ProjectName"
-        )
-        await sym.initialize()
-        value = await sym.read()
-        return sym, value
-        # return await self.get_symbol(
-        #     "TwinCAT_SystemInfoVarList._AppInfo.ProjectName"
-        # ).read()
+        ).read()
+
+    async def get_app_name(self) -> structs.AdsDeviceInfo:
+        """Get the application name from global variable listing."""
+        return await self.get_symbol_by_name(
+            "TwinCAT_SystemInfoVarList._AppInfo.AppName"
+        ).read()
 
     async def prune_unknown_notifications(self):
         """Prune all unknown notification IDs by unregistering each of them."""
@@ -695,7 +722,8 @@ if __name__ == '__main__':
             client.log.info('Device info: %s', device_info)
             project_name = await client.get_project_name()
             client.log.info('Project name: %s', project_name)
-            return project_name
+            app_name = await client.get_app_name()
+            client.log.info('Application name: %s', app_name)
 
             # Give some time for initial notifications, and prune any stale
             # ones from previous sessions:
