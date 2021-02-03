@@ -1134,6 +1134,7 @@ class AoEHandleResponse(AoEResponseHeader):
         # Inherits 'result' from AoEResponseHeader
         ('length', ctypes.c_uint32),
         ('handle', ctypes.c_uint32),
+        ('_data_start', ctypes.c_ubyte * 0),
     ]
 
     def __init__(self, *,
@@ -1143,6 +1144,30 @@ class AoEHandleResponse(AoEResponseHeader):
         super().__init__(result)
         self.length = ctypes.sizeof(ctypes.c_uint32)
         self.handle = handle
+
+    @classmethod
+    def from_buffer_extended(cls: typing.Type[T_AdsStructure],
+                             buf: typing.Union[memoryview, bytearray]
+                             ) -> T_AdsStructure:
+        # TODO: no way of figuring out the appropriate class at this point on
+        # the protocol level, I think
+        response = super().from_buffer_extended(buf)
+        # Stash for later use (TODO rework)
+        # TODO: may be avoided with more ctypes magic, looking at underlying
+        # buffer
+        response._buffer = buf
+        return response
+
+    def upcast_by_index_group(self,
+                              index_group: constants.AdsIndexGroup
+                              ) -> 'AoEHandleResponse':
+        # TODO mapping / check others / etc
+        if index_group == constants.AdsIndexGroup.SYM_INFOBYNAMEEX:
+            # TODO: this shows how "off" these structures are:
+            return AdsSymbolEntry.from_buffer_extended(
+                self._buffer[AoEHandleResponse.handle.offset:]
+            )
+        return self
 
 
 @use_for_response(constants.AdsCommandId.ADD_DEVICE_NOTIFICATION)

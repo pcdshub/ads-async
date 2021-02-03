@@ -1048,5 +1048,19 @@ class Client(ConnectionBase):
         """
         return structs.AdsDeviceInfoRequest()
 
+    def get_symbol_info_by_name(
+        self,
+        name: str,
+    ) -> structs.AdsReadWriteRequest:
+        """
+        Get symbol information by name.
+
+        Parameters
+        -----------
+        name : str
+            The symbol name.
+        """
+        return structs.AdsReadWriteRequest.create_info_by_name_request(name)
+
 
 Client._handlers = dict(_aggregate_handlers(Client))

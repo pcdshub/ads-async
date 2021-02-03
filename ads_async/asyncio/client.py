@@ -203,6 +203,38 @@ class _BlockingRequest:
         await self._event.wait()
 
 
+class Symbol:
+    """A symbol in an AsyncioClient.  Not to be instantiated by itself."""
+    owner: 'AsyncioClient'
+    index_group: Optional[int]
+    index_offset: Optional[int]
+    name: Optional[str]
+
+    def __init__(self,
+                 owner: 'AsyncioClient',
+                 index_group: Optional[int],
+                 index_offset: Optional[int],
+                 name: Optional[str] = None,
+                 ):
+        self.owner = owner
+        self.name = name
+        self.index_group = index_group
+        self.index_offset = index_offset
+
+    async def initialize(self):
+        if self.index_group is None or self.index_offset is None:
+            if self.name is None:
+                raise ValueError(
+                    'Must specify either name or index_group/index_offset'
+                )
+            await self.owner.get_symbol_info_by_name(
+                self.name
+            )
+
+    async def read(self):
+        ...
+
+
 class AsyncioClient:
     client: protocol.Client
     log: log.ComposableLogAdapter
@@ -422,12 +454,39 @@ class AsyncioClient:
             port=port,
         )
 
-    async def get_device_information(self) -> structs.AdsDeviceInfo:
-        """Get device information."""
-        to_send = self.client.get_device_information()
-        async with _BlockingRequest(self, to_send) as req:
+    async def write_and_read(self, item, port: Optional[AmsPort] = None):
+        async with _BlockingRequest(self, item, port=port) as req:
             await req.wait()
         return req.response
+
+    async def get_device_information(self) -> structs.AdsDeviceInfo:
+        """Get device information."""
+        return await self.write_and_read(self.client.get_device_information())
+
+    async def get_symbol_info_by_name(
+        self,
+        name: str
+    ) -> structs.AdsSymbolEntry:
+        res = await self.write_and_read(
+            self.client.get_symbol_info_by_name(name)
+        )
+        return res.upcast_by_index_group(
+            constants.AdsIndexGroup.SYM_INFOBYNAMEEX
+        )
+
+    def get_symbol_by_name(self, name) -> Symbol:
+        """Get a symbol by name."""
+        # TODO: symbol cache
+        return Symbol(self, name=name)
+
+    async def get_project_name(self) -> structs.AdsDeviceInfo:
+        """Get device information."""
+        return await self.get_symbol_info_by_name(
+            "TwinCAT_SystemInfoVarList._AppInfo.ProjectName"
+        )
+        # return await self.get_symbol(
+        #     "TwinCAT_SystemInfoVarList._AppInfo.ProjectName"
+        # ).read()
 
     async def prune_unknown_notifications(self):
         """Prune all unknown notification IDs by unregistering each of them."""
@@ -485,6 +544,9 @@ if __name__ == '__main__':
 
         device_info = await client.get_device_information()
         client.log.info('Device info: %s', device_info)
+        project_name = await client.get_project_name()
+        client.log.info('Project name: %s', project_name)
+        return project_name
 
         # Give some time for initial notifications, and prune any stale ones
         # from previous sessions:
@@ -504,4 +566,4 @@ if __name__ == '__main__':
     from .. import log
     log.configure(level='DEBUG')
 
-    asyncio.run(test(), debug=True)
+    value = asyncio.run(test(), debug=True)

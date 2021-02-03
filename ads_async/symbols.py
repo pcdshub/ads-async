@@ -68,6 +68,7 @@ class OffsetSize:
 
 
 class Symbol:
+    """**Server** Symbol."""
     name: str
     data_type: AdsDataType
     data_area: 'DataArea'
