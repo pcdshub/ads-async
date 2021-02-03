@@ -9,6 +9,10 @@ from ..constants import AdsTransmissionMode, AmsPort
 from . import utils
 
 
+class FailureResponse(Exception):
+    ...
+
+
 class Notification(utils.CallbackHandler):
     """
     Represents one subscription, specified by a notification ID and handle.
@@ -209,17 +213,38 @@ class Symbol:
     index_group: Optional[int]
     index_offset: Optional[int]
     name: Optional[str]
+    info: Optional[structs.AdsSymbolEntry]
+    handle: Optional[int]
 
     def __init__(self,
                  owner: 'AsyncioClient',
-                 index_group: Optional[int],
-                 index_offset: Optional[int],
+                 *,
+                 index_group: Optional[int] = None,
+                 index_offset: Optional[int] = None,
                  name: Optional[str] = None,
                  ):
         self.owner = owner
         self.name = name
         self.index_group = index_group
         self.index_offset = index_offset
+        self.info = None
+        self.handle = None
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, exc_type, exc_value, traceback):
+        await self.clear()
+
+    async def release(self):
+        """Clean up symbol handle, notifications, etc."""
+        if self.handle is not None:
+            await self.owner.release_handle(self.handle)
+            self.handle = None
+
+    @property
+    def is_initialized(self) -> bool:
+        return self.handle is not None
 
     async def initialize(self):
         if self.index_group is None or self.index_offset is None:
@@ -227,12 +252,18 @@ class Symbol:
                 raise ValueError(
                     'Must specify either name or index_group/index_offset'
                 )
-            await self.owner.get_symbol_info_by_name(
-                self.name
-            )
+            self.info = await self.owner.get_symbol_info_by_name(self.name)
+            self.index_group = self.info.index_group
+            self.index_offset = self.info.index_offset
+        else:
+            # self.info = await self.owner.get_symbol_info_by_...()
+            raise NotImplementedError('index_group')
+
+        self.handle = await self.owner.get_symbol_handle_by_name(self.name)
 
     async def read(self):
-        ...
+        if not self.is_initialized:
+            await self.initialize()
 
 
 class AsyncioClient:
@@ -263,6 +294,25 @@ class AsyncioClient:
         self.user_callback_executor = utils.CallbackExecutor(self.log)
         self.reconnect_rate = reconnect_rate
         self._connect_event = asyncio.Event()
+        self._symbols = {}
+
+    async def __aenter__(self):
+        await self.wait_for_connection()
+        return self
+
+    async def __aexit__(self, exc_type, exc_value, traceback):
+        await self.close()
+
+    async def close(self):
+        """Close the connection and clean up."""
+        self.reconnect_rate = None
+        for sym in self._symbols.values():
+            await sym.release()
+        self._symbols.clear()
+        try:
+            self.writer.close()
+        except OSError as ex:
+            self.log.debug('Error closing writer: %s', ex, exc_info=ex)
 
     async def wait_for_connection(self):
         """Block until connected."""
@@ -282,19 +332,20 @@ class AsyncioClient:
             else:
                 await self._connected_loop()
 
-            if self.reconnect_rate is not None:
-                self.log.debug(
-                    'Reconnecting in %d seconds...', self.reconnect_rate
-                )
-                await asyncio.sleep(self.reconnect_rate)
-            else:
+            if self.reconnect_rate is None:
                 self.log.debug('Not reconnecting.')
+                break
+
+            self.log.debug(
+                'Reconnecting in %d seconds...', self.reconnect_rate
+            )
+            await asyncio.sleep(self.reconnect_rate)
 
     async def send(
-            self, *items,
-            ads_error: constants.AdsError = constants.AdsError.NOERR,
-            port: Optional[AmsPort] = None,
-            response_handler: Optional[typing.Coroutine] = None,
+        self, *items,
+        ads_error: constants.AdsError = constants.AdsError.NOERR,
+        port: Optional[AmsPort] = None,
+        response_handler: Optional[typing.Coroutine] = None,
     ):
         """
         Package and send items over the wire.
@@ -455,8 +506,22 @@ class AsyncioClient:
         )
 
     async def write_and_read(self, item, port: Optional[AmsPort] = None):
+        """
+        Write `item` and read the server's response.
+
+        Parameters
+        ----------
+        item : T_AdsStructure
+            The structure instance to write.
+
+        port : AmsPort, optional
+            The port to send the item to.
+        """
         async with _BlockingRequest(self, item, port=port) as req:
             await req.wait()
+        result = getattr(req, 'result', None)
+        if result is not None and result != constants.AdsError.NOERR:
+            raise FailureResponse(f'Request {item} failed with {result}')
         return req.response
 
     async def get_device_information(self) -> structs.AdsDeviceInfo:
@@ -467,6 +532,19 @@ class AsyncioClient:
         self,
         name: str
     ) -> structs.AdsSymbolEntry:
+        """
+        Get symbol information by name.
+
+        Parameters
+        ----------
+        name : str
+            The symbol name.
+
+        Returns
+        -------
+        info : AdsSymbolEntry
+            The symbol entry information.
+        """
         res = await self.write_and_read(
             self.client.get_symbol_info_by_name(name)
         )
@@ -474,16 +552,61 @@ class AsyncioClient:
             constants.AdsIndexGroup.SYM_INFOBYNAMEEX
         )
 
+    async def get_symbol_handle_by_name(
+        self,
+        name: str
+    ) -> structs.AdsSymbolEntry:
+        """
+        Get symbol handle by name.
+
+        Parameters
+        ----------
+        name : str
+            The symbol name.
+
+        Returns
+        -------
+        handle : int
+            The symbol handle.
+        """
+        res = await self.write_and_read(
+            self.client.get_symbol_handle_by_name(name)
+        )
+        return res.handle
+
+    async def release_handle(
+        self,
+        handle: int,
+    ):
+        """
+        Release a handle by id.
+
+        Parameters
+        -----------
+        handle : int
+            The handle identifier.
+        """
+        await self.send(
+            self.client.release_handle(handle),
+        )
+
     def get_symbol_by_name(self, name) -> Symbol:
         """Get a symbol by name."""
-        # TODO: symbol cache
-        return Symbol(self, name=name)
+        try:
+            # TODO: weakref and finalizer for cleanup
+            return self._symbols[name]
+        except KeyError:
+            sym = Symbol(self, name=name)
+            self._symbols[name] = sym
+        return sym
 
     async def get_project_name(self) -> structs.AdsDeviceInfo:
         """Get device information."""
-        return await self.get_symbol_info_by_name(
+        sym = self.get_symbol_by_name(
             "TwinCAT_SystemInfoVarList._AppInfo.ProjectName"
         )
+        await sym.initialize()
+        return sym
         # return await self.get_symbol(
         #     "TwinCAT_SystemInfoVarList._AppInfo.ProjectName"
         # ).read()
@@ -536,32 +659,31 @@ def to_logstash(header: structs.AoEHeader,
 
 if __name__ == '__main__':
     async def test():
-        client = AsyncioClient(server_host=('localhost', 48898),
-                               server_net_id='172.21.148.227.1.1',
-                               client_net_id='172.21.148.164.1.1',
-                               )
-        await client.wait_for_connection()
+        async with AsyncioClient(
+            server_host=('localhost', 48898),
+            server_net_id='172.21.148.227.1.1',
+            client_net_id='172.21.148.164.1.1'
+        ) as client:
+            device_info = await client.get_device_information()
+            client.log.info('Device info: %s', device_info)
+            project_name = await client.get_project_name()
+            client.log.info('Project name: %s', project_name)
+            return project_name
 
-        device_info = await client.get_device_information()
-        client.log.info('Device info: %s', device_info)
-        project_name = await client.get_project_name()
-        client.log.info('Project name: %s', project_name)
-        return project_name
+            # Give some time for initial notifications, and prune any stale
+            # ones from previous sessions:
+            await asyncio.sleep(1.0)
+            await client.prune_unknown_notifications()
+            async for header, _, sample in client.enable_log_system():
+                try:
+                    message = sample.as_log_message()
+                except Exception:
+                    client.log.exception('Got a bad log message sample? %s',
+                                         sample)
+                    continue
 
-        # Give some time for initial notifications, and prune any stale ones
-        # from previous sessions:
-        await asyncio.sleep(1.0)
-        await client.prune_unknown_notifications()
-        async for header, _, sample in client.enable_log_system():
-            try:
-                message = sample.as_log_message()
-            except Exception:
-                client.log.exception('Got a bad log message sample? %s',
-                                     sample)
-                continue
-
-            client.log.info("Log message %s ==> %s", message,
-                            to_logstash(header, message))
+                client.log.info("Log message %s ==> %s", message,
+                                to_logstash(header, message))
 
     from .. import log
     log.configure(level='DEBUG')

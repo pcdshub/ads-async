@@ -1062,5 +1062,37 @@ class Client(ConnectionBase):
         """
         return structs.AdsReadWriteRequest.create_info_by_name_request(name)
 
+    def get_symbol_handle_by_name(
+        self,
+        name: str,
+    ) -> structs.AdsReadWriteRequest:
+        """
+        Get symbol handle by name.
+
+        Parameters
+        -----------
+        name : str
+            The symbol name.
+        """
+        return structs.AdsReadWriteRequest.create_handle_by_name_request(name)
+
+    def release_handle(
+        self,
+        handle: int,
+    ) -> structs.AdsWriteRequest:
+        """
+        Release a handle by id.
+
+        Parameters
+        -----------
+        handle : int
+            The handle identifier.
+        """
+        return structs.AdsWriteRequest(
+            constants.AdsIndexGroup.SYM_RELEASEHND,
+            handle,
+            0,
+        )
+
 
 Client._handlers = dict(_aggregate_handlers(Client))
