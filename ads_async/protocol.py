@@ -1037,5 +1037,16 @@ class Client(ConnectionBase):
             handle=handle
         )
 
+    def get_device_information(self):
+        """
+        Remove a notification given its handle.
+
+        Parameters
+        -----------
+        handle : int
+            The notification handle.
+        """
+        return structs.AdsDeviceInfoRequest()
+
 
 Client._handlers = dict(_aggregate_handlers(Client))

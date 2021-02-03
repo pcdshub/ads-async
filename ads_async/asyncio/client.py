@@ -169,6 +169,40 @@ class Notification(utils.CallbackHandler):
                 self.needs_reactivation = False
 
 
+class _BlockingRequest:
+    """Helper for handling blocking requests in the client."""
+
+    owner: 'AsyncioClient'
+    request: structs.T_AdsStructure
+    header: Optional[structs.AoEHeader]
+    response: Optional[structs.T_AdsStructure]
+    options: dict
+
+    def __init__(self, owner, request, **options):
+        self.owner = owner
+        self.request = request
+        self.options = options
+        self._event = asyncio.Event()
+        self.header = None
+        self.response = None
+
+    async def __aenter__(self):
+        await self.owner.send(self.request, **self.options,
+                              response_handler=self.got_response)
+        return self
+
+    async def __aexit__(self, exc_type, exc_value, traceback):
+        ...
+
+    async def got_response(self, header, response):
+        self.header = header
+        self.response = response
+        self._event.set()
+
+    async def wait(self):
+        await self._event.wait()
+
+
 class AsyncioClient:
     client: protocol.Client
     log: log.ComposableLogAdapter
@@ -388,6 +422,13 @@ class AsyncioClient:
             port=port,
         )
 
+    async def get_device_information(self) -> structs.AdsDeviceInfo:
+        """Get device information."""
+        to_send = self.client.get_device_information()
+        async with _BlockingRequest(self, to_send) as req:
+            await req.wait()
+        return req.response
+
     async def prune_unknown_notifications(self):
         """Prune all unknown notification IDs by unregistering each of them."""
         for source, handle in self.client.unknown_notifications:
@@ -441,6 +482,9 @@ if __name__ == '__main__':
                                client_net_id='172.21.148.164.1.1',
                                )
         await client.wait_for_connection()
+
+        device_info = await client.get_device_information()
+        client.log.info('Device info: %s', device_info)
 
         # Give some time for initial notifications, and prune any stale ones
         # from previous sessions:

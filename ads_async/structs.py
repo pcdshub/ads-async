@@ -376,6 +376,11 @@ class AdsVersion(_AdsStructBase):
     ]
 
 
+@use_for_request(constants.AdsCommandId.READ_DEVICE_INFO)
+class AdsDeviceInfoRequest(_AdsStructBase):
+    _fields_ = []
+
+
 @use_for_response(constants.AdsCommandId.READ_DEVICE_INFO)
 class AdsDeviceInfo(AdsVersion):
     """Contains the version number, revision number and build number."""
