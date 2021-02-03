@@ -146,6 +146,9 @@ class _AdsStructBase(ctypes.LittleEndianStructure):
             fmt = fmt.format(self=self)
             # length = struct.calcsize(fmt)
             value = getattr(self, attr)
+            if value is None:
+                # Null value -> skip
+                continue
             if serialize is not None:
                 value = serialize(value)
             packed.extend(struct.pack(fmt, value) + b'\00' * padding)
@@ -699,6 +702,9 @@ class AdsSymbolEntry(_AdsStructBase):
         '_flags': 'flags',
         '_data_type': 'data_type',
         '_index_group': 'index_group',
+        'name_length': 'name',
+        'type_length': 'type_name',
+        'comment_length': 'comment',
     }
 
     def __init__(self,
@@ -1099,6 +1105,7 @@ class AoEResponseHeader(_AdsStructBase):
 
 
 @use_for_response(constants.AdsCommandId.READ)
+@use_for_response(constants.AdsCommandId.READ_WRITE)
 class AoEReadResponse(AoEResponseHeader):
     _fields_ = [
         # Inherits 'result' from AoEResponseHeader
@@ -1126,24 +1133,6 @@ class AoEReadResponse(AoEResponseHeader):
         self.read_length = len(serialize(self.data))
         return super().serialize()
 
-
-@use_for_response(constants.AdsCommandId.READ_WRITE)
-class AoEHandleResponse(AoEResponseHeader):
-    _fields_ = [
-        # Inherits 'result' from AoEResponseHeader
-        ('length', ctypes.c_uint32),
-        ('handle', ctypes.c_uint32),
-        ('_data_start', ctypes.c_ubyte * 0),
-    ]
-
-    def __init__(self, *,
-                 result: constants.AdsError = constants.AdsError.NOERR,
-                 handle: int = 0,
-                 ):
-        super().__init__(result)
-        self.length = ctypes.sizeof(ctypes.c_uint32)
-        self.handle = handle
-
     @classmethod
     def deserialize(
         cls: typing.Type[T_AdsStructure],
@@ -1159,8 +1148,8 @@ class AoEHandleResponse(AoEResponseHeader):
         return response
 
     def upcast_by_index_group(
-            self,
-            index_group: constants.AdsIndexGroup
+        self,
+        index_group: constants.AdsIndexGroup
     ) -> 'AoEHandleResponse':
         """
         Cast the data payload into an appropriate structure.
@@ -1170,9 +1159,29 @@ class AoEHandleResponse(AoEResponseHeader):
         """
         if index_group == constants.AdsIndexGroup.SYM_INFOBYNAMEEX:
             return AdsSymbolEntry.deserialize(
-                memoryview(self._buffer)[AoEHandleResponse.handle.offset:]
+                memoryview(self._buffer)[AoEReadResponse._data_start.offset:]
             )
         return self
+
+    def as_handle_response(self) -> 'AoEHandleResponse':
+        return AoEHandleResponse.deserialize(self._buffer)
+
+
+class AoEHandleResponse(AoEResponseHeader):
+    _fields_ = [
+        # Inherits 'result' from AoEResponseHeader
+        ('length', ctypes.c_uint32),
+        ('handle', ctypes.c_uint32),
+        ('_data_start', ctypes.c_ubyte * 0),
+    ]
+
+    def __init__(self, *,
+                 result: constants.AdsError = constants.AdsError.NOERR,
+                 handle: int = 0,
+                 ):
+        super().__init__(result)
+        self.length = ctypes.sizeof(ctypes.c_uint32)
+        self.handle = handle
 
 
 @use_for_response(constants.AdsCommandId.ADD_DEVICE_NOTIFICATION)

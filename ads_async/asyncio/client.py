@@ -37,8 +37,9 @@ class Notification(utils.CallbackHandler):
 
     async def _response_handler(self, header, response):
         # if isinstance(response, structs.AoENotificationHandleResponse):
-        response: structs.AoENotificationHandleResponse
+        response: structs.AoEReadResponse
         if response.result == constants.AdsError.NOERR:
+            response = response.as_handle_response()
             self.handle = response.handle
             self.log.debug(
                 "Notification initialized (handle=%d)", self.handle
@@ -264,6 +265,11 @@ class Symbol:
     async def read(self):
         if not self.is_initialized:
             await self.initialize()
+
+        return await self.owner.get_value_by_handle(
+            self.handle,
+            size=self.info.size,
+        )
 
 
 class AsyncioClient:
@@ -572,7 +578,7 @@ class AsyncioClient:
         res = await self.write_and_read(
             self.client.get_symbol_handle_by_name(name)
         )
-        return res.handle
+        return res.as_handle_response().handle
 
     async def release_handle(
         self,
@@ -588,6 +594,26 @@ class AsyncioClient:
         """
         await self.send(
             self.client.release_handle(handle),
+        )
+
+    async def get_value_by_handle(
+        self,
+        handle: int,
+        size: int,
+    ):
+        """
+        Get symbol value by handle.
+
+        Parameters
+        -----------
+        handle : int
+            The handle identifier.
+
+        size : int
+            The size (in bytes) to read.
+        """
+        return await self.write_and_read(
+            self.client.get_value_by_handle(handle, size),
         )
 
     def get_symbol_by_name(self, name) -> Symbol:
@@ -606,7 +632,8 @@ class AsyncioClient:
             "TwinCAT_SystemInfoVarList._AppInfo.ProjectName"
         )
         await sym.initialize()
-        return sym
+        value = await sym.read()
+        return sym, value
         # return await self.get_symbol(
         #     "TwinCAT_SystemInfoVarList._AppInfo.ProjectName"
         # ).read()

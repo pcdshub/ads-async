@@ -1094,5 +1094,27 @@ class Client(ConnectionBase):
             0,
         )
 
+    def get_value_by_handle(
+        self,
+        handle: int,
+        size: int,
+    ) -> structs.AdsReadRequest:
+        """
+        Get symbol value by handle.
+
+        Parameters
+        -----------
+        handle : int
+            The handle identifier.
+
+        size : int
+            The size, in bytes, to read.
+        """
+        return structs.AdsReadRequest(
+            constants.AdsIndexGroup.SYM_VALBYHND,
+            handle,
+            size,
+        )
+
 
 Client._handlers = dict(_aggregate_handlers(Client))
