@@ -5,7 +5,7 @@ import ipaddress
 import struct
 import typing
 
-from . import constants
+from . import constants, utils
 from .constants import AoEHeaderFlag
 
 T_AdsStructure = typing.TypeVar('T_AdsStructure', bound='_AdsStructBase')
@@ -28,14 +28,14 @@ def _use_for(key: str, command_id: constants.AdsCommandId,
     return cls
 
 
-def use_for_response(command_id: constants.AdsCommandId):
+def use_for_response(command_id: constants.AdsCommandId) -> T_AdsStructure:
     """
     Decorator marking a class to be used for a specific AdsCommand response.
     """
     return functools.partial(_use_for, 'response', command_id)
 
 
-def use_for_request(command_id: constants.AdsCommandId):
+def use_for_request(command_id: constants.AdsCommandId) -> T_AdsStructure:
     """
     Decorator marking a class to be used for a specific AdsCommand request.
     """
@@ -97,7 +97,7 @@ class _AdsStructBase(ctypes.LittleEndianStructure):
     Handles:
         - Special reprs by way of `to_dict` (and `_dict_mapping`).
         - Payload serialization / deserialization by way of `_payload_fields`
-          and `from_buffer_extended`.
+          and `deserialize`.
         - Removing alignment by way of _pack_
     """
     # To be overridden by subclasses:
@@ -146,6 +146,9 @@ class _AdsStructBase(ctypes.LittleEndianStructure):
             fmt = fmt.format(self=self)
             # length = struct.calcsize(fmt)
             value = getattr(self, attr)
+            if value is None:
+                # Null value -> skip
+                continue
             if serialize is not None:
                 value = serialize(value)
             packed.extend(struct.pack(fmt, value) + b'\00' * padding)
@@ -153,9 +156,10 @@ class _AdsStructBase(ctypes.LittleEndianStructure):
         return packed
 
     @classmethod
-    def from_buffer_extended(cls: typing.Type[T_AdsStructure],
-                             buf: typing.Union[memoryview, bytearray]
-                             ) -> T_AdsStructure:
+    def deserialize(
+        cls: typing.Type[T_AdsStructure],
+        buf: typing.Union[memoryview, bytearray]
+    ) -> T_AdsStructure:
         """
         Deserialize data from `buf` into a structure + payload.
 
@@ -300,7 +304,7 @@ class AmsNetId(_AdsStructBase):
         octet5 : int
             The 5th octet (i.e., 5 of 1.2.3.4.5.6).
 
-        octet5 : int
+        octet6 : int
             The 6th octet (i.e., 6 of 1.2.3.4.5.6).
 
         Returns
@@ -358,6 +362,9 @@ class AmsAddr(_AdsStructBase):
             return f'{self.net_id}:{self.port.value}({self.port.name})'
         return f'{self.net_id}:{self.port}'
 
+    def __iter__(self):
+        return iter((repr(self.net_id), self.port))
+
 
 class AdsVersion(_AdsStructBase):
     """Contains the version number, revision number and build number."""
@@ -371,6 +378,11 @@ class AdsVersion(_AdsStructBase):
         ('revision', ctypes.c_uint8),
         ('build', ctypes.c_uint16),
     ]
+
+
+@use_for_request(constants.AdsCommandId.READ_DEVICE_INFO)
+class AdsDeviceInfoRequest(_AdsStructBase):
+    _fields_ = []
 
 
 @use_for_response(constants.AdsCommandId.READ_DEVICE_INFO)
@@ -463,6 +475,34 @@ class AdsNotificationAttrib(_AdsStructBase):
     _dict_mapping = {'_transmission_mode': 'transmission_mode'}
 
 
+class AdsNotificationLogMessage(_AdsStructBase):
+    _fields_ = [
+        ('_timestamp', ctypes.c_uint64),
+        ('unknown', ctypes.c_uint32),
+        ('ams_port', ctypes.c_uint32),
+        ('_sender_name', ctypes.c_ubyte * 16),
+        ('message_length', ctypes.c_uint32),
+        # (message here)
+    ]
+
+    _payload_fields = [
+        ('message', '{self.message_length}s', 0, bytes, serialize),
+    ]
+
+    _dict_mapping = {
+        '_sender_name': 'sender_name',
+        '_timestamp': 'timestamp',
+    }
+
+    @property
+    def timestamp(self):
+        return utils.get_datetime_from_timestamp(self._timestamp)
+
+    @property
+    def sender_name(self):
+        return bytes(self._sender_name).split(b'\0')[0]
+
+
 class AdsNotificationHeader(_AdsStructBase):
     """This structure is also passed to the callback function."""
 
@@ -477,11 +517,19 @@ class AdsNotificationHeader(_AdsStructBase):
 
         # Contains a 64-bit value representing the number of 100-nanosecond
         # intervals since January 1, 1601 (UTC).
-        ('timestamp', ctypes.c_uint64),
+        ('_timestamp', ctypes.c_uint64),
 
         # Number of bytes transferred.
         ('sample_size', ctypes.c_uint32),
     ]
+
+    _dict_mapping = {
+        '_timestamp': 'timestamp',
+    }
+
+    @property
+    def timestamp(self):
+        return utils.get_datetime_from_timestamp(self._timestamp)
 
 # *
 #  @brief Type definition of the callback function required by the
@@ -493,6 +541,102 @@ class AdsNotificationHeader(_AdsStructBase):
 # /
 # typedef void (* PAdsNotificationFuncEx)(const AmsAddr* pAddr, const
 # AdsNotificationHeader* pNotification, ctypes.c_uint32 hUser);
+
+
+class AdsNotificationSample(_AdsStructBase):
+    _fields_ = [
+        # Handle for the notification. Is specified when the notification is
+        # defined.
+        ('notification_handle', ctypes.c_uint32),
+
+        # Number of bytes transferred.
+        ('sample_size', ctypes.c_uint32),
+        ('_data_start', ctypes.c_ubyte * 0),
+    ]
+
+    _payload_fields = [
+        ('data', '{self.sample_size}s', 0, bytes, serialize),
+    ]
+    _dict_mapping = {'_data_start': 'data'}
+
+    def as_log_message(self) -> AdsNotificationLogMessage:
+        """Try to convert the raw message to a log message."""
+        return AdsNotificationLogMessage.deserialize(
+            bytearray(self.data)
+        )
+
+
+class AdsNotificationStampHeader(_AdsStructBase):
+    _fields_ = [
+        # Contains a 64-bit value representing the number of 100-nanosecond
+        # intervals since January 1, 1601 (UTC).
+        ('_timestamp', ctypes.c_uint64),
+
+        # Number of bytes transferred.
+        ('num_samples', ctypes.c_uint32),
+        ('_sample_start', ctypes.c_ubyte * 0),
+    ]
+
+    _dict_mapping = {
+        '_sample_start': 'samples',
+        '_timestamp': 'timestamp',
+    }
+
+    @property
+    def timestamp(self):
+        return utils.get_datetime_from_timestamp(self._timestamp)
+
+    @classmethod
+    def deserialize(
+        cls: typing.Type[T_AdsStructure],
+        buf: typing.Union[memoryview, bytearray]
+    ) -> T_AdsStructure:
+        new_struct = cls.from_buffer(buf)
+        payload_buf = memoryview(buf)[ctypes.sizeof(cls):]
+
+        new_struct.byte_size = 0
+        new_struct.samples = []
+        for idx in range(new_struct.num_samples):
+            sample = AdsNotificationSample.deserialize(payload_buf)
+            # print('\n' * 3, sample.as_log_message())
+            new_struct.samples.append(sample)
+            consumed = (
+                ctypes.sizeof(AdsNotificationSample) + sample.sample_size
+            )
+            new_struct.byte_size += consumed
+            payload_buf = payload_buf[consumed:]
+
+        return new_struct
+
+
+@use_for_request(constants.AdsCommandId.DEVICE_NOTIFICATION)
+@use_for_response(constants.AdsCommandId.DEVICE_NOTIFICATION)
+class AdsNotificationStream(_AdsStructBase):
+    """This structure is also passed to the callback function."""
+
+    _fields_ = [
+        ('length', ctypes.c_uint32),
+        ('num_stamps', ctypes.c_uint32),
+        ('_stamp_start', ctypes.c_ubyte * 0),
+    ]
+
+    _dict_mapping = {'_stamp_start': 'stamps'}
+
+    @classmethod
+    def deserialize(
+        cls: typing.Type[T_AdsStructure],
+        buf: typing.Union[memoryview, bytearray]
+    ) -> T_AdsStructure:
+        new_struct = cls.from_buffer(buf)
+        payload_buf = memoryview(buf)[ctypes.sizeof(cls):]
+
+        new_struct.stamps = []
+        for stamp in range(new_struct.num_stamps):
+            stamp = AdsNotificationStampHeader.deserialize(payload_buf)
+            new_struct.stamps.append(stamp)
+            payload_buf = payload_buf[stamp.byte_size:]
+
+        return new_struct
 
 
 class AdsSymbolEntry(_AdsStructBase):
@@ -554,10 +698,14 @@ class AdsSymbolEntry(_AdsStructBase):
     index_group = _enum_property('_index_group',  # type: ignore
                                  constants.AdsIndexGroup,
                                  strict=False)
-    _dict_mapping = {'_flags': 'flags',
-                     '_data_type': 'data_type',
-                     '_index_group': 'index_group',
-                     }
+    _dict_mapping = {
+        '_flags': 'flags',
+        '_data_type': 'data_type',
+        '_index_group': 'index_group',
+        'name_length': 'name',
+        'type_length': 'type_name',
+        'comment_length': 'comment',
+    }
 
     def __init__(self,
                  index_group: constants.AdsIndexGroup,
@@ -957,6 +1105,7 @@ class AoEResponseHeader(_AdsStructBase):
 
 
 @use_for_response(constants.AdsCommandId.READ)
+@use_for_response(constants.AdsCommandId.READ_WRITE)
 class AoEReadResponse(AoEResponseHeader):
     _fields_ = [
         # Inherits 'result' from AoEResponseHeader
@@ -984,13 +1133,46 @@ class AoEReadResponse(AoEResponseHeader):
         self.read_length = len(serialize(self.data))
         return super().serialize()
 
+    @classmethod
+    def deserialize(
+        cls: typing.Type[T_AdsStructure],
+        buf: typing.Union[memoryview, bytearray]
+    ) -> T_AdsStructure:
+        # TODO: no way of figuring out the appropriate class at this point on
+        # the protocol level, I think
+        response = super().deserialize(buf)
+        # Stash for later use (TODO rework)
+        # TODO: may be avoided with more ctypes magic, looking at underlying
+        # buffer
+        response._buffer = bytearray(buf)
+        return response
 
-@use_for_response(constants.AdsCommandId.READ_WRITE)
+    def upcast_by_index_group(
+        self,
+        index_group: constants.AdsIndexGroup
+    ) -> 'AoEHandleResponse':
+        """
+        Cast the data payload into an appropriate structure.
+
+        At the protocol level, clients are not currently able to determine
+        the appropriate
+        """
+        if index_group == constants.AdsIndexGroup.SYM_INFOBYNAMEEX:
+            return AdsSymbolEntry.deserialize(
+                memoryview(self._buffer)[AoEReadResponse._data_start.offset:]
+            )
+        return self
+
+    def as_handle_response(self) -> 'AoEHandleResponse':
+        return AoEHandleResponse.deserialize(self._buffer)
+
+
 class AoEHandleResponse(AoEResponseHeader):
     _fields_ = [
         # Inherits 'result' from AoEResponseHeader
         ('length', ctypes.c_uint32),
         ('handle', ctypes.c_uint32),
+        ('_data_start', ctypes.c_ubyte * 0),
     ]
 
     def __init__(self, *,

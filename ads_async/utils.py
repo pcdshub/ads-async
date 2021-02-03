@@ -1,3 +1,4 @@
+import datetime
 import threading
 
 
@@ -30,3 +31,13 @@ class ThreadsafeCounter:
 
             self.value = value
             return self.value
+
+
+UNIX_EPOCH_START = 116444736000000000  # January 1, 1970
+
+
+def get_datetime_from_timestamp(timestamp: int) -> datetime.datetime:
+    """Get a datetime.datetime instance from a TwinCAT timestamp."""
+    return datetime.datetime.utcfromtimestamp(
+        (timestamp - UNIX_EPOCH_START) * 1e-7
+    )
