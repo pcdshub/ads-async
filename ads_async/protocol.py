@@ -95,10 +95,10 @@ def from_wire(
             except KeyError:
                 cmd = view[:aoe_header.length]
             else:
-                # if hasattr(cmd_cls, 'from_buffer_extended'):
+                # if hasattr(cmd_cls, 'deserialize'):
                 # TODO: can't call super.from_buffer in a subclass
                 # classmethod?
-                cmd = cmd_cls.from_buffer_extended(view)
+                cmd = cmd_cls.deserialize(view)
 
             item = (aoe_header, cmd)
 

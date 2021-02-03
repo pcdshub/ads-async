@@ -97,7 +97,7 @@ class _AdsStructBase(ctypes.LittleEndianStructure):
     Handles:
         - Special reprs by way of `to_dict` (and `_dict_mapping`).
         - Payload serialization / deserialization by way of `_payload_fields`
-          and `from_buffer_extended`.
+          and `deserialize`.
         - Removing alignment by way of _pack_
     """
     # To be overridden by subclasses:
@@ -153,9 +153,10 @@ class _AdsStructBase(ctypes.LittleEndianStructure):
         return packed
 
     @classmethod
-    def from_buffer_extended(cls: typing.Type[T_AdsStructure],
-                             buf: typing.Union[memoryview, bytearray]
-                             ) -> T_AdsStructure:
+    def deserialize(
+        cls: typing.Type[T_AdsStructure],
+        buf: typing.Union[memoryview, bytearray]
+    ) -> T_AdsStructure:
         """
         Deserialize data from `buf` into a structure + payload.
 
@@ -300,7 +301,7 @@ class AmsNetId(_AdsStructBase):
         octet5 : int
             The 5th octet (i.e., 5 of 1.2.3.4.5.6).
 
-        octet5 : int
+        octet6 : int
             The 6th octet (i.e., 6 of 1.2.3.4.5.6).
 
         Returns
@@ -557,7 +558,7 @@ class AdsNotificationSample(_AdsStructBase):
 
     def as_log_message(self) -> AdsNotificationLogMessage:
         """Try to convert the raw message to a log message."""
-        return AdsNotificationLogMessage.from_buffer_extended(
+        return AdsNotificationLogMessage.deserialize(
             bytearray(self.data)
         )
 
@@ -583,17 +584,17 @@ class AdsNotificationStampHeader(_AdsStructBase):
         return utils.get_datetime_from_timestamp(self._timestamp)
 
     @classmethod
-    def from_buffer_extended(cls: typing.Type[T_AdsStructure],
-                             buf: typing.Union[memoryview, bytearray]
-                             ) -> T_AdsStructure:
-
+    def deserialize(
+        cls: typing.Type[T_AdsStructure],
+        buf: typing.Union[memoryview, bytearray]
+    ) -> T_AdsStructure:
         new_struct = cls.from_buffer(buf)
         payload_buf = memoryview(buf)[ctypes.sizeof(cls):]
 
         new_struct.byte_size = 0
         new_struct.samples = []
         for idx in range(new_struct.num_samples):
-            sample = AdsNotificationSample.from_buffer_extended(payload_buf)
+            sample = AdsNotificationSample.deserialize(payload_buf)
             # print('\n' * 3, sample.as_log_message())
             new_struct.samples.append(sample)
             consumed = (
@@ -619,18 +620,16 @@ class AdsNotificationStream(_AdsStructBase):
     _dict_mapping = {'_stamp_start': 'stamps'}
 
     @classmethod
-    def from_buffer_extended(cls: typing.Type[T_AdsStructure],
-                             buf: typing.Union[memoryview, bytearray]
-                             ) -> T_AdsStructure:
-
+    def deserialize(
+        cls: typing.Type[T_AdsStructure],
+        buf: typing.Union[memoryview, bytearray]
+    ) -> T_AdsStructure:
         new_struct = cls.from_buffer(buf)
         payload_buf = memoryview(buf)[ctypes.sizeof(cls):]
 
         new_struct.stamps = []
         for stamp in range(new_struct.num_stamps):
-            stamp = AdsNotificationStampHeader.from_buffer_extended(
-                payload_buf
-            )
+            stamp = AdsNotificationStampHeader.deserialize(payload_buf)
             new_struct.stamps.append(stamp)
             payload_buf = payload_buf[stamp.byte_size:]
 
@@ -1146,26 +1145,32 @@ class AoEHandleResponse(AoEResponseHeader):
         self.handle = handle
 
     @classmethod
-    def from_buffer_extended(cls: typing.Type[T_AdsStructure],
-                             buf: typing.Union[memoryview, bytearray]
-                             ) -> T_AdsStructure:
+    def deserialize(
+        cls: typing.Type[T_AdsStructure],
+        buf: typing.Union[memoryview, bytearray]
+    ) -> T_AdsStructure:
         # TODO: no way of figuring out the appropriate class at this point on
         # the protocol level, I think
-        response = super().from_buffer_extended(buf)
+        response = super().deserialize(buf)
         # Stash for later use (TODO rework)
         # TODO: may be avoided with more ctypes magic, looking at underlying
         # buffer
-        response._buffer = buf
+        response._buffer = bytearray(buf)
         return response
 
-    def upcast_by_index_group(self,
-                              index_group: constants.AdsIndexGroup
-                              ) -> 'AoEHandleResponse':
-        # TODO mapping / check others / etc
+    def upcast_by_index_group(
+            self,
+            index_group: constants.AdsIndexGroup
+    ) -> 'AoEHandleResponse':
+        """
+        Cast the data payload into an appropriate structure.
+
+        At the protocol level, clients are not currently able to determine
+        the appropriate
+        """
         if index_group == constants.AdsIndexGroup.SYM_INFOBYNAMEEX:
-            # TODO: this shows how "off" these structures are:
-            return AdsSymbolEntry.from_buffer_extended(
-                self._buffer[AoEHandleResponse.handle.offset:]
+            return AdsSymbolEntry.deserialize(
+                memoryview(self._buffer)[AoEHandleResponse.handle.offset:]
             )
         return self
 
