@@ -1,0 +1,20 @@
+record(ai, "$(PREFIX)Test_RBV") {
+  field(DESC, "")
+  field(SCAN, "I/O Intr")
+  field(PINI, "1")
+  field(TSE, "-2")
+  field(DTYP, "asynFloat64")
+  field(INP, "@asyn($(PORT),0,1)ADSPORT=851/POLL_RATE=1/MAIN.M5.Axis.NcToPlc.PosDiff?")
+  field(TPRO, 1)
+  info(archive, "VAL")
+}
+
+record(ao, "$(PREFIX)Test") {
+  field(DESC, "")
+  field(DTYP, "asynFloat64")
+  field(OUT, "@asyn($(PORT),0,1)ADSPORT=851/MAIN.M5.Axis.NcToPlc.PosDiff=")
+  info(autosaveFields_pass0, "VAL")
+  info(archive, "VAL")
+  field(TPRO, 1)
+  field(PINI, 1)
+}
