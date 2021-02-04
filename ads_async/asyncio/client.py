@@ -297,6 +297,26 @@ class Symbol:
 
 
 class AsyncioClient:
+    """
+    ADS client based on asyncio.
+
+    Parameters
+    ----------
+    server_host : (host, port)
+
+    server_net_id : str, optional
+        Server AMS Net ID.  If unspecified, assumed to be
+        ``'{server_host}.1.1'`` by a reasonably standard convention.
+
+    client_net_id : str, optional
+        Client AMS Net ID.  May be automatically determined by the local
+        network interface used to connect to the server host.
+
+    reconnect_rate : int, optional
+        Rate, in seconds, to reconnect.  None to disable automatic
+        reconnection.
+    """
+
     client: protocol.Client
     log: log.ComposableLogAdapter
     reader: asyncio.StreamReader
@@ -305,10 +325,13 @@ class AsyncioClient:
     def __init__(
             self,
             server_host: typing.Tuple[str, int],
-            server_net_id: str,
+            server_net_id: Optional[str] = None,
             client_net_id: Optional[str] = None,  # can be determined later
-            reconnect_rate=10,
+            reconnect_rate : Optional[int] = 10,
             ):
+        if server_net_id is None:
+            server_net_id = f'{server_host[0]}.1.1'
+
         self.client = protocol.Client(
             server_host=server_host,
             server_net_id=server_net_id,
@@ -374,6 +397,7 @@ class AsyncioClient:
     async def send(
         self, *items,
         ads_error: constants.AdsError = constants.AdsError.NOERR,
+        target_net_id: Optional[str] = None,
         port: Optional[AmsPort] = None,
         response_handler: Optional[typing.Coroutine] = None,
     ):
@@ -384,6 +408,9 @@ class AsyncioClient:
         ----------
         *items :
             Items to send.
+
+        target_net_id : str, optional
+            Net ID to send to.
 
         port : AmsPort, optional
             Port to request notifications from.  Defaults to the current target
@@ -396,7 +423,8 @@ class AsyncioClient:
         """
         invoke_id, bytes_to_send = self.client.request_to_wire(
             *items, ads_error=ads_error,
-            port=port or self.client.their_port
+            target=(target_net_id or self.client.server_net_id,
+                    port or self.client.their_port),
         )
         if response_handler is not None:
             self._response_handlers[invoke_id].append(response_handler)
