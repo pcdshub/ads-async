@@ -1,12 +1,15 @@
 import asyncio
 import collections
+import contextvars
 import ctypes
 import typing
-from typing import Optional
+from typing import Optional, Tuple
 
 from .. import constants, log, protocol, structs
 from ..constants import AdsTransmissionMode, AmsPort
 from . import utils
+
+_target_address = contextvars.ContextVar('_target_address', default=None)
 
 
 class FailureResponse(Exception):
@@ -336,6 +339,7 @@ class AsyncioClient:
             client_net_id=client_net_id,
             address=('0.0.0.0', 0)
         )
+        self._default_target = (server_net_id, self.client.their_port)
         self.log = self.client.log
         self._queue = utils.AsyncioQueue()
         self._handle_index = 0
@@ -421,8 +425,7 @@ class AsyncioClient:
         """
         invoke_id, bytes_to_send = self.client.request_to_wire(
             *items, ads_error=ads_error,
-            target=(net_id or self.client.server_net_id,
-                    port or self.client.their_port),
+            target=self._get_target_or_default(net_id, port),
         )
         if response_handler is not None:
             self._response_handlers[invoke_id].append(response_handler)
@@ -499,6 +502,17 @@ class AsyncioClient:
         #         ...
         #     # self._tasks.create()
 
+    @property
+    def default_target(self):
+        """
+        Default target (net_id, port).
+        """
+        return self._default_target
+
+    @default_target.setter
+    def default_target(self, default_target):
+        self._default_target = default_target
+
     def enable_log_system(self, length=255) -> Notification:
         """
         Enable the logging system to get messages from the LOGGER port.
@@ -570,11 +584,29 @@ class AsyncioClient:
                 max_delay=max_delay,
                 cycle_time=cycle_time,
             ),
-            target=(net_id or self.client.server_net_id,
-                    port or self.client.their_port),
+            target=self._get_target_or_default(net_id, port),
         )
 
-    async def write_and_read(self, item, port: Optional[AmsPort] = None):
+    def _get_target_or_default(
+        self,
+        net_id: Optional[str],
+        port: Optional[constants.AmsPort],
+    ) -> Tuple[str, constants.AmsPort]:
+        """
+        Optionally override the target net ID and port, or use the current
+        default.
+        """
+        return (
+            net_id or self._default_target[0],
+            constants.AmsPort(port or self._default_target[1]),
+        )
+
+    async def write_and_read(
+        self,
+        item,
+        net_id: Optional[str] = None,
+        port: Optional[AmsPort] = None,
+    ):
         """
         Write `item` and read the server's response.
 
@@ -586,7 +618,9 @@ class AsyncioClient:
         port : AmsPort, optional
             The port to send the item to.
         """
-        async with _BlockingRequest(self, item, port=port) as req:
+        net_id, port = self._get_target_or_default(net_id, port)
+        async with _BlockingRequest(self, item, net_id=net_id,
+                                    port=port) as req:
             await req.wait()
         result = getattr(req, 'result', None)
         if result is not None and result != constants.AdsError.NOERR:
