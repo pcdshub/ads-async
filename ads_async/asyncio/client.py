@@ -40,18 +40,19 @@ class Notification(utils.CallbackHandler):
         header,
         response: structs.AoENotificationHandleResponse
     ):
-        if response.result == constants.AdsError.NOERR:
-            self.handle = response.handle
-            self.log.debug(
-                "Notification initialized (handle=%d)", self.handle
-            )
-            # TODO: unsubscribe if no listeners?
-            client = self.owner.client
-            client.handle_to_notification[response.handle] = self
-        else:
+        if response.result != constants.AdsError.NOERR:
             self.log.debug(
                 "Notification failed to initialize: %s", response.result
             )
+            return
+
+        self.handle = response.handle
+        self.log.debug(
+            "Notification initialized (handle=%d)", self.handle
+        )
+        # TODO: unsubscribe if no listeners?
+        client = self.owner.client
+        client.handle_to_notification[response.handle] = self
 
     def process(self, header, timestamp, sample):
         self.log.debug("Notification update [%s]: %s", timestamp, sample)
