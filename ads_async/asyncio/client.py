@@ -24,15 +24,14 @@ class Notification(utils.CallbackHandler):
     it should be made by calling the ``add_notification()`` methods on
     the connection (or ``Symbol``).
     """
-    def __init__(self, owner, user_callback_executor, command, port):
+    def __init__(self, owner, user_callback_executor, command, target):
         super().__init__(notification_id=0, handle=None,
                          user_callback_executor=user_callback_executor)
         self.command = command
-        self.port = port
+        self.target = target
         self.owner = owner
         self.log = self.owner.log
         self.most_recent_notification = None
-        # self.needs_reactivation = False
 
     async def _response_handler(
         self,
@@ -97,7 +96,8 @@ class Notification(utils.CallbackHandler):
         async def subscribe():
             await self.owner.send(
                 self.command,
-                port=self.port,
+                net_id=self.target[0],
+                port=self.target[1],
                 response_handler=self._response_handler,
             )
 
@@ -172,7 +172,6 @@ class Notification(utils.CallbackHandler):
                 # Go dormant.
                 await self._unsubscribe()
                 self.most_recent_notification = None
-                self.needs_reactivation = False
 
 
 class _BlockingRequest:
@@ -396,7 +395,7 @@ class AsyncioClient:
     async def send(
         self, *items,
         ads_error: constants.AdsError = constants.AdsError.NOERR,
-        target_net_id: Optional[str] = None,
+        net_id: Optional[str] = None,
         port: Optional[AmsPort] = None,
         response_handler: Optional[typing.Coroutine] = None,
     ):
@@ -408,7 +407,7 @@ class AsyncioClient:
         *items :
             Items to send.
 
-        target_net_id : str, optional
+        net_id : str, optional
             Net ID to send to.
 
         port : AmsPort, optional
@@ -422,7 +421,7 @@ class AsyncioClient:
         """
         invoke_id, bytes_to_send = self.client.request_to_wire(
             *items, ads_error=ads_error,
-            target=(target_net_id or self.client.server_net_id,
+            target=(net_id or self.client.server_net_id,
                     port or self.client.their_port),
         )
         if response_handler is not None:
@@ -527,6 +526,7 @@ class AsyncioClient:
         mode: AdsTransmissionMode = AdsTransmissionMode.SERVERCYCLE,
         max_delay: int = 1,
         cycle_time: int = 100,
+        net_id: Optional[str] = None,
         port: Optional[AmsPort] = None,
     ) -> Notification:
         """
@@ -570,7 +570,8 @@ class AsyncioClient:
                 max_delay=max_delay,
                 cycle_time=cycle_time,
             ),
-            port=port,
+            target=(net_id or self.client.server_net_id,
+                    port or self.client.their_port),
         )
 
     async def write_and_read(self, item, port: Optional[AmsPort] = None):
