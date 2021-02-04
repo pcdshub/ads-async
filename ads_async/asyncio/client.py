@@ -25,8 +25,7 @@ class Notification(utils.CallbackHandler):
     it should be made by calling the ``add_notification()`` methods on
     the connection (or ``Symbol``).
     """
-    def __init__(self, owner, user_callback_executor,
-                 command, port):
+    def __init__(self, owner, user_callback_executor, command, port):
         super().__init__(notification_id=0, handle=None,
                          user_callback_executor=user_callback_executor)
         self.command = command
@@ -473,7 +472,18 @@ class AsyncioClient:
         #         ...
         #     # self._tasks.create()
 
-    def enable_log_system(self, length=255):
+    def enable_log_system(self, length=255) -> Notification:
+        """
+        Enable the logging system to get messages from the LOGGER port.
+
+        This returns a :class:`Notification` instance which can support an
+        arbitrary number of user-provided callback methods.
+
+        Parameters
+        ----------
+        length : int
+            Maximum length of each notification, in bytes.
+        """
         return self.add_notification_by_index(
             index_group=1,
             index_offset=65535,
@@ -490,7 +500,7 @@ class AsyncioClient:
         max_delay: int = 1,
         cycle_time: int = 100,
         port: Optional[AmsPort] = None,
-    ):
+    ) -> Notification:
         """
         Add an advanced notification by way of index group/offset.
 
@@ -503,7 +513,7 @@ class AsyncioClient:
             Contains the index offset number of the requested ADS service.
 
         length : int
-            Max length.
+            Maximum length of each notification, in bytes.
 
         mode : AdsTransmissionMode
             Specifies if the event should be fired cyclically or only if the
