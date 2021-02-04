@@ -134,7 +134,7 @@ def test_read_and_write_by_handle(
     request = structs.AdsReadRequest(
         constants.AdsIndexGroup.SYM_VALBYHND,
         handle,
-        length=symbol.size,
+        length=symbol.byte_size,
     )
 
     response, = send_request(client, command=request)
@@ -152,4 +152,4 @@ def test_read_symbol_info_ex(
     entry = response.data  # TODO: only because this is in the same process...
     assert isinstance(entry, structs.AdsSymbolEntry)
     assert entry.name == symbol.name
-    assert entry.type_name == symbol.data_type.name
+    assert entry.data_type == symbol.data_type

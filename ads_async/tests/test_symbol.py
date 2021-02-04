@@ -27,7 +27,7 @@ def data_area(memory):
 
 
 def test_symbol(data_area):
-    sym = ads_async.symbols.SimpleSymbol(
+    sym = ads_async.symbols.BasicSymbol(
         data_area=data_area,
         name='test',
         offset=0,

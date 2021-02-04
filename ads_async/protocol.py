@@ -365,7 +365,7 @@ class ConnectionBase:
 
     def request_to_wire(self, *items: structs.T_Serializable,
                         ads_error: AdsError = AdsError.NOERR,
-                        port: constants.AmsPort = constants.AmsPort.R0_PLC_TC3,
+                        target: Optional[structs.AmsAddr] = None,
                         ) -> bytearray:
         """
         Prepare `items` to be sent over the wire.
@@ -381,11 +381,24 @@ class ConnectionBase:
         ads_error : AdsError
             The AoEHeader error code to return.
 
+        target : AmsAddr or (addr, port), optional
+            Target AMS address.  Defaults to configured server Net ID and
+            ``their_port`` (R0_PLC_TC3 or 851).
+
         Returns
         -------
         data : bytearray
             Serialized data to send.
         """
+        if target is None:
+            target = structs.AmsAddr(self.server_net_id, self.their_port)
+        else:
+            target_net_id, target_port = target
+            target = structs.AmsAddr(
+                structs.AmsNetId.from_string(target_net_id),
+                target_port
+            )
+
         invoke_id = self._invoke_counter()
         assert len(items) == 1  # TODO
 
@@ -394,10 +407,7 @@ class ConnectionBase:
 
         items, bytes_to_send = request_to_wire(
             *items,
-            target=structs.AmsAddr(
-                structs.AmsNetId.from_string(self.server_net_id),
-                port
-            ),
+            target=target,
             source=structs.AmsAddr(
                 structs.AmsNetId.from_string(self.client_net_id),
                 self.our_port

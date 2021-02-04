@@ -1,13 +1,15 @@
 import asyncio
 import collections
+import contextvars
 import ctypes
-import json
 import typing
-from typing import Optional
+from typing import Optional, Tuple
 
 from .. import constants, log, protocol, structs
 from ..constants import AdsTransmissionMode, AmsPort
 from . import utils
+
+_target_address = contextvars.ContextVar('_target_address', default=None)
 
 
 class FailureResponse(Exception):
@@ -25,34 +27,33 @@ class Notification(utils.CallbackHandler):
     it should be made by calling the ``add_notification()`` methods on
     the connection (or ``Symbol``).
     """
-    def __init__(self, owner, user_callback_executor,
-                 command, port):
+    def __init__(self, owner, user_callback_executor, command, target):
         super().__init__(notification_id=0, handle=None,
                          user_callback_executor=user_callback_executor)
         self.command = command
-        self.port = port
+        self.target = target
         self.owner = owner
         self.log = self.owner.log
         self.most_recent_notification = None
-        # self.needs_reactivation = False
 
     async def _response_handler(
         self,
         header,
         response: structs.AoENotificationHandleResponse
     ):
-        if response.result == constants.AdsError.NOERR:
-            self.handle = response.handle
-            self.log.debug(
-                "Notification initialized (handle=%d)", self.handle
-            )
-            # TODO: unsubscribe if no listeners?
-            client = self.owner.client
-            client.handle_to_notification[response.handle] = self
-        else:
+        if response.result != constants.AdsError.NOERR:
             self.log.debug(
                 "Notification failed to initialize: %s", response.result
             )
+            return
+
+        self.handle = response.handle
+        self.log.debug(
+            "Notification initialized (handle=%d)", self.handle
+        )
+        # TODO: unsubscribe if no listeners?
+        client = self.owner.client
+        client.handle_to_notification[response.handle] = self
 
     def process(self, header, timestamp, sample):
         self.log.debug("Notification update [%s]: %s", timestamp, sample)
@@ -98,7 +99,8 @@ class Notification(utils.CallbackHandler):
         async def subscribe():
             await self.owner.send(
                 self.command,
-                port=self.port,
+                net_id=self.target[0],
+                port=self.target[1],
                 response_handler=self._response_handler,
             )
 
@@ -173,7 +175,6 @@ class Notification(utils.CallbackHandler):
                 # Go dormant.
                 await self._unsubscribe()
                 self.most_recent_notification = None
-                self.needs_reactivation = False
 
 
 class _BlockingRequest:
@@ -297,6 +298,26 @@ class Symbol:
 
 
 class AsyncioClient:
+    """
+    ADS client based on asyncio.
+
+    Parameters
+    ----------
+    server_host : (host, port)
+
+    server_net_id : str, optional
+        Server AMS Net ID.  If unspecified, assumed to be
+        ``'{server_host}.1.1'`` by a reasonably standard convention.
+
+    client_net_id : str, optional
+        Client AMS Net ID.  May be automatically determined by the local
+        network interface used to connect to the server host.
+
+    reconnect_rate : int, optional
+        Rate, in seconds, to reconnect.  None to disable automatic
+        reconnection.
+    """
+
     client: protocol.Client
     log: log.ComposableLogAdapter
     reader: asyncio.StreamReader
@@ -305,16 +326,20 @@ class AsyncioClient:
     def __init__(
             self,
             server_host: typing.Tuple[str, int],
-            server_net_id: str,
+            server_net_id: Optional[str] = None,
             client_net_id: Optional[str] = None,  # can be determined later
-            reconnect_rate=10,
+            reconnect_rate: Optional[int] = 10,
             ):
+        if server_net_id is None:
+            server_net_id = f'{server_host[0]}.1.1'
+
         self.client = protocol.Client(
             server_host=server_host,
             server_net_id=server_net_id,
             client_net_id=client_net_id,
             address=('0.0.0.0', 0)
         )
+        self._default_target = (server_net_id, self.client.their_port)
         self.log = self.client.log
         self._queue = utils.AsyncioQueue()
         self._handle_index = 0
@@ -374,6 +399,7 @@ class AsyncioClient:
     async def send(
         self, *items,
         ads_error: constants.AdsError = constants.AdsError.NOERR,
+        net_id: Optional[str] = None,
         port: Optional[AmsPort] = None,
         response_handler: Optional[typing.Coroutine] = None,
     ):
@@ -384,6 +410,9 @@ class AsyncioClient:
         ----------
         *items :
             Items to send.
+
+        net_id : str, optional
+            Net ID to send to.
 
         port : AmsPort, optional
             Port to request notifications from.  Defaults to the current target
@@ -396,7 +425,7 @@ class AsyncioClient:
         """
         invoke_id, bytes_to_send = self.client.request_to_wire(
             *items, ads_error=ads_error,
-            port=port or self.client.their_port
+            target=self._get_target_or_default(net_id, port),
         )
         if response_handler is not None:
             self._response_handlers[invoke_id].append(response_handler)
@@ -473,7 +502,29 @@ class AsyncioClient:
         #         ...
         #     # self._tasks.create()
 
-    def enable_log_system(self, length=255):
+    @property
+    def default_target(self):
+        """
+        Default target (net_id, port).
+        """
+        return self._default_target
+
+    @default_target.setter
+    def default_target(self, default_target):
+        self._default_target = default_target
+
+    def enable_log_system(self, length=255) -> Notification:
+        """
+        Enable the logging system to get messages from the LOGGER port.
+
+        This returns a :class:`Notification` instance which can support an
+        arbitrary number of user-provided callback methods.
+
+        Parameters
+        ----------
+        length : int
+            Maximum length of each notification, in bytes.
+        """
         return self.add_notification_by_index(
             index_group=1,
             index_offset=65535,
@@ -489,8 +540,9 @@ class AsyncioClient:
         mode: AdsTransmissionMode = AdsTransmissionMode.SERVERCYCLE,
         max_delay: int = 1,
         cycle_time: int = 100,
+        net_id: Optional[str] = None,
         port: Optional[AmsPort] = None,
-    ):
+    ) -> Notification:
         """
         Add an advanced notification by way of index group/offset.
 
@@ -503,7 +555,7 @@ class AsyncioClient:
             Contains the index offset number of the requested ADS service.
 
         length : int
-            Max length.
+            Maximum length of each notification, in bytes.
 
         mode : AdsTransmissionMode
             Specifies if the event should be fired cyclically or only if the
@@ -532,10 +584,29 @@ class AsyncioClient:
                 max_delay=max_delay,
                 cycle_time=cycle_time,
             ),
-            port=port,
+            target=self._get_target_or_default(net_id, port),
         )
 
-    async def write_and_read(self, item, port: Optional[AmsPort] = None):
+    def _get_target_or_default(
+        self,
+        net_id: Optional[str],
+        port: Optional[constants.AmsPort],
+    ) -> Tuple[str, constants.AmsPort]:
+        """
+        Optionally override the target net ID and port, or use the current
+        default.
+        """
+        return (
+            net_id or self._default_target[0],
+            constants.AmsPort(port or self._default_target[1]),
+        )
+
+    async def write_and_read(
+        self,
+        item,
+        net_id: Optional[str] = None,
+        port: Optional[AmsPort] = None,
+    ):
         """
         Write `item` and read the server's response.
 
@@ -547,7 +618,9 @@ class AsyncioClient:
         port : AmsPort, optional
             The port to send the item to.
         """
-        async with _BlockingRequest(self, item, port=port) as req:
+        net_id, port = self._get_target_or_default(net_id, port)
+        async with _BlockingRequest(self, item, net_id=net_id,
+                                    port=port) as req:
             await req.wait()
         result = getattr(req, 'result', None)
         if result is not None and result != constants.AdsError.NOERR:
@@ -665,82 +738,26 @@ class AsyncioClient:
             "TwinCAT_SystemInfoVarList._AppInfo.AppName"
         ).read()
 
+    async def get_task_count(self) -> int:
+        """Get the number of tasks running on the PLC."""
+        count, = await self.get_symbol_by_name(
+            "TwinCAT_SystemInfoVarList._AppInfo.TaskCnt"
+        ).read()
+        return count
+
+    async def get_task_names(self) -> typing.Dict[int, str]:
+        """Get the names of tasks running on the PLC."""
+        task_count = await self.get_task_count()
+        names = {}
+        for task_id in range(1, task_count + 1):
+            names[task_id] = await self.get_symbol_by_name(
+                f"TwinCAT_SystemInfoVarList._TaskInfo[{task_id}].TaskName"
+            ).read()
+        return names
+
     async def prune_unknown_notifications(self):
         """Prune all unknown notification IDs by unregistering each of them."""
         for source, handle in self.client.unknown_notifications:
             _, port = source
             await self.send(self.client.remove_notification(handle),
                             port=port)
-
-
-def to_logstash(header: structs.AoEHeader,
-                message: structs.AdsNotificationLogMessage) -> dict:
-    custom_json = {
-        "port_name": message.sender_name.decode('ascii'),
-        "ams_port": message.ams_port,
-        "source": repr(header.source),
-        "identifier": message.unknown,
-    }
-
-    # From:
-    # AdsNotificationLogMessage(timestamp=datetime.datetime,
-    #                           unknown=84, ams_port=500,
-    #                           sender_name=b'TCNC',
-    #                           message_length=114, message=b'\'Axis
-    #                           1\' (Axis-ID: 1): The axis needs the
-    #                           "Feed Forward Permission" for forward
-    #                           positioning (error-code: 0x4358) !')
-    # To:
-    # (f'{"schema":"twincat-event-0","ts":{twincat_now},"plc":"LogTest",'
-    #   '"severity":4,"id":0,'
-    #   '"event_class":"C0FFEEC0-FFEE-COFF-EECO-FFEEC0FFEEC0",'
-    #   '"msg":"Critical (Log system test.)",'
-    #   '"source":"pcds_logstash.testing.fbLogger/Debug",'
-    #   '"event_type":3,"json":"{}"}'
-    #   ),
-    return {
-        "schema": "twincat-event-0",
-        "ts": message.timestamp.timestamp(),
-        "severity": 0,  # hmm
-        "id": 0,  # hmm
-        "event_class": "C0FFEEC0-FFEE-COFF-EECO-FFEEC0FFEEC0",
-        "msg": message.message.decode('latin-1'),
-        "source": "logging.aggregator/Translator",
-        "event_type": 0,  # hmm
-        "json": json.dumps(custom_json),
-    }
-
-
-if __name__ == '__main__':
-    async def test():
-        async with AsyncioClient(
-            server_host=('localhost', 48898),
-            server_net_id='172.21.148.227.1.1',
-            client_net_id='172.21.148.164.1.1'
-        ) as client:
-            device_info = await client.get_device_information()
-            client.log.info('Device info: %s', device_info)
-            project_name = await client.get_project_name()
-            client.log.info('Project name: %s', project_name)
-            app_name = await client.get_app_name()
-            client.log.info('Application name: %s', app_name)
-
-            # Give some time for initial notifications, and prune any stale
-            # ones from previous sessions:
-            await asyncio.sleep(1.0)
-            await client.prune_unknown_notifications()
-            async for header, _, sample in client.enable_log_system():
-                try:
-                    message = sample.as_log_message()
-                except Exception:
-                    client.log.exception('Got a bad log message sample? %s',
-                                         sample)
-                    continue
-
-                client.log.info("Log message %s ==> %s", message,
-                                to_logstash(header, message))
-
-    from .. import log
-    log.configure(level='DEBUG')
-
-    value = asyncio.run(test(), debug=True)

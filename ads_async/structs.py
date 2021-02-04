@@ -412,7 +412,7 @@ class AdsDeviceInfo(AdsVersion):
         return (self.version, self.revision, self.build)
 
 
-class AdsNotificationAttrib(_AdsStructBase):
+class AdsNotificationAttrib(_AdsStructBase):  # TODO: Unused; may be removed?
     """
     Contains all the attributes for the definition of a notification.
 
@@ -1157,6 +1157,10 @@ class AoEReadResponse(AoEResponseHeader):
         At the protocol level, clients are not currently able to determine
         the appropriate
         """
+        if self.result != constants.AdsError.NOERR:
+            # TODO: exception type
+            raise ValueError(f'Error response: {self.result.name}')
+
         if index_group == constants.AdsIndexGroup.SYM_INFOBYNAMEEX:
             return AdsSymbolEntry.deserialize(
                 memoryview(self._buffer)[AoEReadResponse._data_start.offset:]
@@ -1202,6 +1206,31 @@ class AoENotificationHandleResponse(AoEResponseHeader):
 def serialize_data(data_type: constants.AdsDataType, data: typing.Any,
                    length: int = None,
                    *, endian='<') -> typing.Tuple[int, bytes]:
+    """
+    Serialize symbol data for transmission over the wire.
+
+    Parameters
+    ----------
+    data_type : constants.AdsDataType
+        The data type of the data to serialize.
+
+    data :
+        The data to serialize.
+
+    length : int, optional
+        Number of elements of data_type (defaults to ``len(data)``).
+
+    endian: str, optional
+        Endianness of the stored data.  Defaults to little-endian.
+
+    Returns
+    -------
+    bytes_consumed : int
+        Number of bytes of the serialized data.
+
+    data : bytes
+        The serialized data.
+    """
     length = length if length is not None else len(data)
     ctypes_type = data_type.ctypes_type._type_  # type: ignore
     st = struct.Struct(f'{endian}{length}{ctypes_type}')
@@ -1212,6 +1241,31 @@ def deserialize_data(data_type: constants.AdsDataType,
                      length: int,
                      data: bytes,
                      *, endian='<') -> typing.Tuple[int, typing.Any]:
+    """
+    Deserialize symbol data from the wire.
+
+    Parameters
+    ----------
+    data_type : constants.AdsDataType
+        The data type of the data to deserialize.
+
+    data : bytes
+        The wire data to deserialize.
+
+    length : int, optional
+        Elements of data_type (defaults to ``len(data)``).
+
+    endian: str, optional
+        Endianness of the stored data.  Defaults to little-endian.
+
+    Returns
+    -------
+    bytes_consumed : int
+        Number of bytes consumed.
+
+    value :
+        The deserialized value.
+    """
     ctypes_type = data_type.ctypes_type._type_  # type: ignore
     st = struct.Struct(f'{endian}{length}{ctypes_type}')
     return st.size, st.unpack(data)
