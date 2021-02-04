@@ -1157,6 +1157,10 @@ class AoEReadResponse(AoEResponseHeader):
         At the protocol level, clients are not currently able to determine
         the appropriate
         """
+        if self.result != constants.AdsError.NOERR:
+            # TODO: exception type
+            raise ValueError(f'Error response: {self.result.name}')
+
         if index_group == constants.AdsIndexGroup.SYM_INFOBYNAMEEX:
             return AdsSymbolEntry.deserialize(
                 memoryview(self._buffer)[AoEReadResponse._data_start.offset:]

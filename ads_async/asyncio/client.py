@@ -665,6 +665,23 @@ class AsyncioClient:
             "TwinCAT_SystemInfoVarList._AppInfo.AppName"
         ).read()
 
+    async def get_task_count(self) -> int:
+        """Get the number of tasks running on the PLC."""
+        count, = await self.get_symbol_by_name(
+            "TwinCAT_SystemInfoVarList._AppInfo.TaskCnt"
+        ).read()
+        return count
+
+    async def get_task_names(self) -> typing.Dict[int, str]:
+        """Get the names of tasks running on the PLC."""
+        task_count = await self.get_task_count()
+        names = {}
+        for task_id in range(1, task_count + 1):
+            names[task_id] = await self.get_symbol_by_name(
+                f"TwinCAT_SystemInfoVarList._TaskInfo[{task_id}].TaskName"
+            ).read()
+        return names
+
     async def prune_unknown_notifications(self):
         """Prune all unknown notification IDs by unregistering each of them."""
         for source, handle in self.client.unknown_notifications:
@@ -724,6 +741,8 @@ if __name__ == '__main__':
             client.log.info('Project name: %s', project_name)
             app_name = await client.get_app_name()
             client.log.info('Application name: %s', app_name)
+            task_names = await client.get_task_names()
+            client.log.info('Task names: %s', task_names)
 
             # Give some time for initial notifications, and prune any stale
             # ones from previous sessions:
@@ -742,5 +761,6 @@ if __name__ == '__main__':
 
     from .. import log
     log.configure(level='DEBUG')
+    # log.configure(level='INFO')
 
     value = asyncio.run(test(), debug=True)
