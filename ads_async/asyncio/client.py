@@ -227,7 +227,7 @@ class Symbol:
                  index_group: Optional[int] = None,
                  index_offset: Optional[int] = None,
                  name: Optional[str] = None,
-                 string_encoding: str = 'utf-8',
+                 string_encoding: str = constants.ADS_ASYNC_STRING_ENCODING,
                  ):
         self.owner = owner
         self.name = name

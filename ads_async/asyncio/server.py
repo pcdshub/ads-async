@@ -9,28 +9,32 @@ from . import utils
 logger = logging.getLogger(__name__)
 
 
-class AsyncioAcceptedClient:
+class AsyncioServerConnection:
     server: 'AsyncioServer'
-    client: protocol.AcceptedClient
+    connection: protocol.ServerConnection
     log: log.ComposableLogAdapter
     reader: asyncio.StreamReader
     writer: asyncio.StreamWriter
 
     def __init__(
-            self, server: 'AsyncioServer', client: protocol.AcceptedClient,
-            reader: asyncio.StreamReader, writer: asyncio.StreamWriter):
+        self,
+        server: 'AsyncioServer',
+        connection: protocol.ServerConnection,
+        reader: asyncio.StreamReader,
+        writer: asyncio.StreamWriter,
+    ):
         self.server = server
-        self.client = client
+        self.connection = connection
         self.reader = reader
         self.writer = writer
-        self.log = client.log
+        self.log = connection.log
         self._queue = utils.AsyncioQueue()
         self._handle_index = 0
 
     async def send_response(
             self, *items, request_header,
             ads_error: constants.AdsError = constants.AdsError.NOERR):
-        bytes_to_send = self.client.response_to_wire(
+        bytes_to_send = self.connection.response_to_wire(
             *items,
             request_header=request_header,
             ads_error=ads_error)
@@ -42,15 +46,15 @@ class AsyncioAcceptedClient:
         while True:
             data = await self.reader.read(1024)
             if not len(data):
-                self.client.disconnected()
+                self.connection.disconnected()
                 break
 
-            for header, item in self.client.received_data(data):
+            for header, item in self.connection.received_data(data):
                 await self._handle_command(header, item)
 
     async def _handle_command(self, header: structs.AoEHeader, item):
         try:
-            response = self.client.handle_command(header, item)
+            response = self.connection.handle_command(header, item)
         except protocol.ErrorResponse as ex:
             logger.debug('handle_command failed with caught error',
                          exc_info=ex)
@@ -149,10 +153,15 @@ class AsyncioServer:
 
     async def _handle_new_client(self, server_host, reader, writer):
         client_addr = writer.transport.get_extra_info('peername')
-        protocol_client = self.server.add_client(server_host, client_addr)
-        client = AsyncioAcceptedClient(self, protocol_client, reader, writer)
+        protocol_conn = self.server.add_connection(
+            our_address=server_host,
+            their_address=client_addr,
+        )
+        connection = AsyncioServerConnection(
+            self, protocol_conn, reader, writer
+        )
         try:
-            await client._receive_loop()
+            await connection._receive_loop()
         finally:
             self.server.remove_client(client_addr)
 
@@ -176,7 +185,7 @@ if __name__ == '__main__':
             #   print(name, symbol)
             print()
             print(data_area.area_type)
-            dump_memory(data_area.memory, data_area.symbols.values())
+            # dump_memory(data_area.memory, data_area.symbols.values())
 
         server = AsyncioServer(database)
         await server.start()

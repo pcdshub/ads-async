@@ -4,9 +4,15 @@ import os
 import typing
 
 ADS_TCP_SERVER_PORT = 0xBF02
-ADS_ASYNC_STRING_ENCODING = os.environ.get('ADS_ASYNC_STRING_ENCODING',
-                                           'utf-8')
+ADS_ASYNC_STRING_ENCODING = os.environ.get(
+    'ADS_ASYNC_STRING_ENCODING', 'utf-8'
+)
 # TODO: some scenarios where ADS data can be big endian?
+
+
+class Role(str, enum.Enum):
+    Client = 'Client'
+    Server = 'Server'
 
 
 class AmsPort(enum.IntEnum):
@@ -60,15 +66,15 @@ class AoEHeaderFlag(enum.IntFlag):
 
     """
 
-    RESPONSE = 0b0000_0001
-    NO_RETURN = 0b0000_0010
-    ADS_COMMAND = 0b0000_0100
-    SYSTEM_COMMAND = 0b0000_1000
-    HIGH_PRIORITY_COMMAND = 0b0001_0000
-    TIMESTAMP_ADDED = 0b0010_0000
-    UDP_COMMAND = 0b0100_0000
-    INIT_COMMAND = 0b1000_0000
-    BROADCAST = 0b1000_0000_0000_0000
+    RESPONSE = 0b0000_0001  # 1
+    NO_RETURN = 0b0000_0010  # 2
+    ADS_COMMAND = 0b0000_0100  # 4
+    SYSTEM_COMMAND = 0b0000_1000  # 8
+    HIGH_PRIORITY_COMMAND = 0b0001_0000 # 16
+    TIMESTAMP_ADDED = 0b0010_0000  # 32
+    UDP_COMMAND = 0b0100_0000  # 64
+    INIT_COMMAND = 0b1000_0000  # 128
+    BROADCAST = 0b1000_0000_0000_0000  # 32768
 
 
 class AdsIndexGroup(enum.IntEnum):
