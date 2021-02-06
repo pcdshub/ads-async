@@ -5,7 +5,7 @@ import pathlib
 import pytest
 
 import ads_async
-from ads_async import constants, protocol, structs
+from ads_async import constants, structs
 from ads_async.protocol import Server, ServerCircuit, ServerConnection
 
 logger = logging.getLogger(__name__)
@@ -83,7 +83,6 @@ def serialize_request(command: structs._AdsStructBase,
 
 
 def send_request(
-    server_connection: ServerConnection,
     server_circuit: ServerCircuit,
     command: structs._AdsStructBase = None,
     command_id: constants.AdsCommandId = None,
@@ -96,7 +95,7 @@ def send_request(
         print('\t', idx, send)
     print()
 
-    for header, item in server_connection.received_data(serialized):
+    for header, item in server_circuit.connection.received_data(serialized):
         response = server_circuit.handle_command(
             header=header, request=item)
         print('Received')
@@ -108,61 +107,66 @@ def send_request(
     return response
 
 
-def test_read_state(server: protocol.Server, server_circuit: ServerCircuit):
+def test_read_state(server: Server, server_circuit: ServerCircuit):
     header, response = send_request(
-        client, command_id=constants.AdsCommandId.READ_STATE)
+        server_circuit,
+        command_id=constants.AdsCommandId.READ_STATE
+    )
     assert isinstance(response, structs.AdsReadStateResponse)
     assert response.ads_state == server.ads_state
 
 
-# def test_read_device_info(server: protocol.Server,
-#                           client: protocol.AcceptedClient):
-#     header, response = send_request(
-#         client, command_id=constants.AdsCommandId.READ_DEVICE_INFO)
-#     assert isinstance(response, structs.AdsDeviceInfo)
-#     assert response.name == server.name
-#     assert response.version_tuple == server.version
-#
-#
-# def test_read_and_write_by_handle(
-#         server: protocol.Server, client: protocol.AcceptedClient,
-#         symbol: ads_async.symbols.Symbol):
-#     request = structs.AdsReadWriteRequest.create_handle_by_name_request(
-#         symbol.name)
-#     assert server.database.get_symbol_by_name(symbol.name) is symbol
-#     response, = send_request(client, command=request)
-#     assert isinstance(response, structs.AoEHandleResponse)
-#     handle = response.handle
-#
-#     request = structs.AdsWriteRequest(
-#         constants.AdsIndexGroup.SYM_VALBYHND,
-#         handle,
-#         data=symbol.ctypes_data_type(1),
-#     )
-#
-#     response, = send_request(client, command=request)
-#     assert isinstance(response, structs.AoEResponseHeader)
-#     assert response.result == 0
-#
-#     request = structs.AdsReadRequest(
-#         constants.AdsIndexGroup.SYM_VALBYHND,
-#         handle,
-#         length=symbol.byte_size,
-#     )
-#
-#     response, = send_request(client, command=request)
-#     assert isinstance(response, structs.AoEReadResponse)
-#
-#     assert bytes(response.data) == bytes(symbol.ctypes_data_type(1))
-#
-#
-# def test_read_symbol_info_ex(
-#         server: protocol.Server, client: protocol.AcceptedClient,
-#         symbol: ads_async.symbols.Symbol):
-#     request = structs.AdsReadWriteRequest.create_info_by_name_request(
-#         symbol.name)
-#     response, = send_request(client, command=request)
-#     entry = response.data  # TODO: only because this is in the same process...
-#     assert isinstance(entry, structs.AdsSymbolEntry)
-#     assert entry.name == symbol.name
-#     assert entry.data_type == symbol.data_type
+def test_read_device_info(server: Server, server_circuit: ServerCircuit):
+    header, response = send_request(
+        server_circuit, command_id=constants.AdsCommandId.READ_DEVICE_INFO)
+    assert isinstance(response, structs.AdsDeviceInfo)
+    assert response.name == server.name
+    assert response.version_tuple == server.version
+
+
+def test_read_and_write_by_handle(
+    server: Server,
+    server_circuit: ServerCircuit,
+    symbol: ads_async.symbols.Symbol,
+):
+    request = structs.AdsReadWriteRequest.create_handle_by_name_request(
+        symbol.name)
+    assert server.database.get_symbol_by_name(symbol.name) is symbol
+    response, = send_request(server_circuit, command=request)
+    assert isinstance(response, structs.AoEHandleResponse)
+    handle = response.handle
+
+    request = structs.AdsWriteRequest(
+        constants.AdsIndexGroup.SYM_VALBYHND,
+        handle,
+        data=symbol.ctypes_data_type(1),
+    )
+
+    response, = send_request(server_circuit, command=request)
+    assert isinstance(response, structs.AoEResponseHeader)
+    assert response.result == 0
+
+    request = structs.AdsReadRequest(
+        constants.AdsIndexGroup.SYM_VALBYHND,
+        handle,
+        length=symbol.byte_size,
+    )
+
+    response, = send_request(server_circuit, command=request)
+    assert isinstance(response, structs.AoEReadResponse)
+
+    assert bytes(response.data) == bytes(symbol.ctypes_data_type(1))
+
+
+def test_read_symbol_info_ex(
+    server: Server,
+    server_circuit: ServerCircuit,
+    symbol: ads_async.symbols.Symbol
+):
+    request = structs.AdsReadWriteRequest.create_info_by_name_request(
+        symbol.name)
+    response, = send_request(server_circuit, command=request)
+    entry = response.data  # TODO: only because this is in the same process...
+    assert isinstance(entry, structs.AdsSymbolEntry)
+    assert entry.name == symbol.name
+    assert entry.data_type == symbol.data_type
