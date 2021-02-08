@@ -26,3 +26,11 @@ repos:
     rev: 4.3.21
     hooks:
     -   id: isort
+
+repos:
+  - repo: https://github.com/psf/black
+    rev: 20.8b1 # Replace by any tag/version: https://github.com/psf/black/tags
+    hooks:
+      - id: black
+        language_version: python3
+        exclude: '^(versioneer.py|ads_async/_version.py)$'
