@@ -178,9 +178,7 @@ class Symbol:
         try:
             mem_start, mem_end = self.memory_range
         except NullPointerDereferencedError:
-            return (
-                f"<{self.__class__.__name__} {self.name!r} " f"value=... NULL_POINTER>"
-            )
+            return f"<{self.__class__.__name__} {self.name!r} value=... NULL_POINTER>"
 
         pointer = " pointer" if self.pointer else ""
         return (
