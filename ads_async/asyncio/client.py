@@ -174,7 +174,7 @@ class Notification(utils.CallbackHandler):
 class _BlockingRequest:
     """Helper for handling blocking requests in the client."""
 
-    owner: "AsyncioClient"
+    owner: "AsyncioClientConnection"
     request: structs.T_AdsStructure
     header: Optional[structs.AoEHeader]
     response: Optional[structs.T_AdsStructure]
@@ -209,9 +209,13 @@ class _BlockingRequest:
 
 
 class Symbol:
-    """A symbol in an AsyncioClient.  Not to be instantiated by itself."""
+    """
+    A symbol from an AsyncioClientCircuit.
 
-    owner: "AsyncioClient"
+    Not to be instantiated by itself.
+    """
+
+    owner: "AsyncioClientCircuit"
     index_group: Optional[int]
     index_offset: Optional[int]
     name: Optional[str]
@@ -221,7 +225,7 @@ class Symbol:
 
     def __init__(
         self,
-        owner: "AsyncioClient",
+        owner: "AsyncioClientCircuit",
         *,
         index_group: Optional[int] = None,
         index_offset: Optional[int] = None,
@@ -294,7 +298,7 @@ class Symbol:
         return data
 
 
-class AsyncioCircuit:
+class AsyncioClientCircuit:
     """
     A Circuit represents a "source net id" to "target net id" connection.
 
@@ -302,7 +306,7 @@ class AsyncioCircuit:
 
     Parameters
     ----------
-    connection : AsyncioClient
+    connection : AsyncioClientConnection
         The asyncio client connection.
 
     net_id : str
@@ -315,14 +319,14 @@ class AsyncioCircuit:
     circuit: protocol.ClientCircuit
     _response_handlers: typing.DefaultDict[int, list]
     _symbols: dict
-    connection: "AsyncioClient"
+    connection: "AsyncioClientConnection"
     default_port: AmsPort
     log: log.ComposableLogAdapter
     net_id: str
 
     def __init__(
         self,
-        connection: "AsyncioClient",
+        connection: "AsyncioClientConnection",
         net_id: str,
         default_port=AmsPort.R0_PLC_TC3,
     ):
@@ -339,6 +343,14 @@ class AsyncioCircuit:
         for sym in self._symbols.values():
             await sym.release()
         self._symbols.clear()
+        await self.connection._circuit_cleanup(self.net_id)
+
+    async def __aenter__(self):
+        # await self.connection.wait_for_connection()
+        return self
+
+    async def __aexit__(self, exc_type, exc_value, traceback):
+        await self.close()
 
     async def send(
         self,
@@ -618,7 +630,7 @@ class AsyncioCircuit:
             await self.send(self.circuit.remove_notification(handle), port=port)
 
 
-class AsyncioClient:  # TODO -> Connection?
+class AsyncioClientConnection:
     """
     ADS client based on asyncio.
 
@@ -683,8 +695,7 @@ class AsyncioClient:  # TODO -> Connection?
         """
         if isinstance(net_id, structs.AmsNetId):
             net_id = str(net_id)
-
-        if net_id is None:
+        elif net_id is None:
             net_id = f"{self.connection.their_address[0]}.1.1"
 
         try:
@@ -692,9 +703,15 @@ class AsyncioClient:  # TODO -> Connection?
         except KeyError:
             ...
 
-        circuit = AsyncioCircuit(connection=self, net_id=net_id)
+        circuit = AsyncioClientCircuit(connection=self, net_id=net_id)
         self._circuits[net_id] = circuit
         return circuit
+
+    def _circuit_cleanup(self, net_id):
+        try:
+            _ = self._circuits.pop(net_id)
+        except KeyError:
+            return
 
     async def close(self):
         """Close the connection and clean up."""
@@ -766,3 +783,8 @@ class AsyncioClient:  # TODO -> Connection?
         """Send bytes over the wire."""
         self.writer.write(bytes_to_send)
         await self.writer.drain()
+
+
+class Client(AsyncioClientConnection):
+    # User-friendly alias for `AsyncioClientConnection`
+    ...

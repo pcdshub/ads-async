@@ -952,7 +952,6 @@ class ClientCircuit(_Circuit):
     def _device_notification(
         self, request, header: structs.AoEHeader, stream: structs.AdsNotificationStream
     ):
-        print("req", request, "header", header, "stream", stream)
         for stamp in stream.stamps:
             timestamp = stamp.timestamp
             for sample in stamp.samples:
