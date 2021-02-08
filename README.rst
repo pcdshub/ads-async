@@ -11,13 +11,13 @@ ads-async
 
 Asyncio (or sans-i/o) TwinCAT AMS/ADS testing server in pure Python.
 
+... and maybe a prototype client, too.
 
 Requirements
 ------------
 
 * Python 3.6+
 * (Optional) pytmc (for loading .tmc files in the server)
-
 
 Server Functionality
 --------------------
@@ -31,7 +31,12 @@ Server Functionality
 Client Functionality
 --------------------
 
-* None
+* Preliminary symbol, handle, and notification support
+* LOGGER port message decoding
+* Shortcuts for common information (project/application/task names, task count)
+* Ability to easily prune unknown notification handles
+* Automatic reconnection
+* Log system configuration
 
 Installation
 ------------

@@ -1,2 +1,4 @@
 [flake8]
 exclude = .git,__pycache__,build,dist,versioneer.py,ads_async/_version.py,docs/source/conf.py
+max-line-length = 88
+ignore = E402,W504,E203,W503

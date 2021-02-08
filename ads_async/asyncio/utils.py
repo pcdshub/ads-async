@@ -54,7 +54,7 @@ class _TaskHandler:
 
 
 class AsyncioQueue:
-    '''Asyncio queue modified for async/sync API compatibility.'''
+    """Asyncio queue modified for async/sync API compatibility."""
 
     def __init__(self, maxsize=0):
         self._queue = asyncio.Queue(maxsize)
@@ -66,8 +66,7 @@ class AsyncioQueue:
         return await self._queue.put(value)
 
     def get(self):
-        future = asyncio.run_coroutine_threadsafe(
-            self._queue.get(), get_running_loop())
+        future = asyncio.run_coroutine_threadsafe(self._queue.get(), get_running_loop())
 
         return future.result()
 
@@ -94,13 +93,14 @@ class CallbackExecutor:
                 try:
                     await callback(*args, **kwargs)
                 except Exception:
-                    self.log.exception('Callback failure')
+                    self.log.exception("Callback failure")
             else:
                 try:
                     loop.run_in_executor(
-                        None, functools.partial(callback, *args, **kwargs))
+                        None, functools.partial(callback, *args, **kwargs)
+                    )
                 except Exception:
-                    self.log.exception('Callback failure')
+                    self.log.exception("Callback failure")
 
     def submit(self, callback, *args, **kwargs):
         self.callbacks.put((callback, args, kwargs))
@@ -161,9 +161,7 @@ class CallbackHandler:
                 to_remove.append(cb_id)
                 continue
 
-            self.user_callback_executor.submit(
-                callback, *args, **kwargs
-            )
+            self.user_callback_executor.submit(callback, *args, **kwargs)
 
         with self.callback_lock:
             for remove_id in to_remove:
@@ -180,6 +178,7 @@ if sys.version_info < (3, 7):
 
     def create_task(coro):
         return get_running_loop().create_task(coro)
+
 
 else:
     get_running_loop = asyncio.get_running_loop
