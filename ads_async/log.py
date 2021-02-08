@@ -134,13 +134,12 @@ class SymbolFilter(logging.Filter):
     def filter(self, record):
         if record.levelno >= self.levelno:
             return True
-        elif hasattr(record, 'symbol'):
+        if hasattr(record, 'symbol'):
             for name in self.names:
                 if fnmatch.fnmatch(record.symbol, name):
                     return True
             return False
-        else:
-            return not self.exclusive
+        return not self.exclusive
 
 
 class AddressFilter(logging.Filter):
@@ -176,22 +175,23 @@ class AddressFilter(logging.Filter):
         for address in addresses_list:
             if isinstance(address, str):
                 if ':' in address:
-                    host, port_as_str = address.split(':')
+                    host, port_as_str = address.rsplit(':', 1)
                     self.addresses_list.append((host, int(port_as_str)))
                 else:
                     self.hosts_list.append(address)
             elif isinstance(address, tuple):
-                if len(address) == 2:
-                    self.addresses_list.append(address)
-                else:
+                if len(address) != 2:
                     raise ValueError(
                         "The target addresses should given as strings like "
                         "'XX.XX.XX.XX:YYYY' or tuples like ('XX.XX.XX.XX', "
-                        "YYYY).")
+                        "YYYY)."
+                    )
+                self.addresses_list.append(address)
             else:
                 raise ValueError(
                     "The target addresses should given as strings like "
-                    "'XX.XX.XX.XX:YYYY' or tuples like ('XX.XX.XX.XX', YYYY).")
+                    "'XX.XX.XX.XX:YYYY' or tuples like ('XX.XX.XX.XX', YYYY)."
+                )
 
         self.levelno = validate_level(level)
         self.exclusive = exclusive
@@ -199,13 +199,14 @@ class AddressFilter(logging.Filter):
     def filter(self, record):
         if record.levelno >= self.levelno:
             return True
-        elif hasattr(record, 'our_address'):
-            return (record.our_address in self.addresses_list or
-                    record.our_address[0] in self.hosts_list or
-                    record.their_address in self.addresses_list or
-                    record.their_address[0] in self.hosts_list)
-        else:
-            return not self.exclusive
+        if hasattr(record, 'our_address'):
+            return (
+                record.our_address in self.addresses_list or
+                record.our_address[0] in self.hosts_list or
+                record.their_address in self.addresses_list or
+                record.their_address[0] in self.hosts_list
+            )
+        return not self.exclusive
 
 
 class RoleFilter(logging.Filter):
@@ -241,10 +242,9 @@ class RoleFilter(logging.Filter):
     def filter(self, record):
         if record.levelno >= self.levelno:
             return True
-        elif hasattr(record, 'role'):
+        if hasattr(record, 'role'):
             return record.role is self.role
-        else:
-            return not self.exclusive
+        return not self.exclusive
 
 
 def _set_handler_with_logger(logger_name='ads_async', file=sys.stdout,

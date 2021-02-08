@@ -6,7 +6,7 @@ import sys
 import textwrap
 import typing
 
-from . import constants, structs
+from . import constants, log, structs
 from .constants import AdsDataType
 
 try:
@@ -15,7 +15,7 @@ except ImportError:
     pytmc = None
 
 
-logger = logging.getLogger(__name__)
+module_logger = logging.getLogger(__name__)
 POINTER_TYPE = ctypes.c_uint64
 
 
@@ -96,6 +96,12 @@ class Symbol:
         self.offset = offset
         self.bit_offset = bit_offset
         self.pointer = pointer  # TODO: only depth of 1
+        self.log = log.ComposableLogAdapter(
+            module_logger,
+            extra=dict(
+                symbol=name,
+            ),
+        )
 
         if pointer and bit_offset is not None:
             raise ValueError('Pointer with bit offset?')
@@ -139,7 +145,7 @@ class Symbol:
         else:
             byte_value = bytes(value)
 
-        logger.debug('Symbol %s write %s (%s)', self, value, byte_value)
+        self.log.debug('Symbol %s write %s (%s)', self, value, byte_value)
         if self.bit_offset is not None:
             return self.memory.write_bits(self.offset,
                                           self.bit_offset.offset,
@@ -424,7 +430,7 @@ class TmcDatabase(Database):
             raise RuntimeError('pytmc unavailable for .tmc file support')
 
         if not isinstance(tmc, pytmc.parser.TcModuleClass):
-            logger.debug('Loading tmc file: %s', tmc)
+            module_logger.debug('Loading tmc file: %s', tmc)
             tmc = pytmc.parser.parse(tmc)
 
         self.tmc = tmc
