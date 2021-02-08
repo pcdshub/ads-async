@@ -35,16 +35,16 @@ class PlcMemory:
         return len(self.memory)
 
     def read(self, offset, size):
-        return memoryview(self.memory)[offset:offset + size]
+        return memoryview(self.memory)[offset : offset + size]
 
     def write(self, offset, data):
         size = len(data)
-        self.memory[offset:offset + size] = data
+        self.memory[offset : offset + size] = data
 
     def read_bits(self, offset, bit_offset, bit_size) -> bytes:
         # byte_size = math.ceil(bit_size / 8)
         assert bit_size <= 8
-        value = self.memory[offset:offset + 1]
+        value = self.memory[offset : offset + 1]
         return (value >> bit_offset) & ((2 ** bit_size) - 1)
 
     def write_bits(self, offset, bit_offset, bit_size, data):
@@ -55,10 +55,10 @@ class PlcMemory:
         read_bit_mask = ((2 ** bit_size) - 1) << bit_offset
 
         # clear the value first
-        value = self.memory[offset:offset + 1] & (full_mask & ~read_bit_mask)
+        value = self.memory[offset : offset + 1] & (full_mask & ~read_bit_mask)
         # shift and bring in the data
         value = value | ((data & ((2 ** bit_size) - 1)) << bit_offset)
-        self.memory[offset:offset + 1] = value
+        self.memory[offset : offset + 1] = value
 
 
 class OffsetSize:
@@ -69,25 +69,27 @@ class OffsetSize:
 
 class Symbol:
     """**Server** Symbol."""
+
     name: str
     data_type: AdsDataType
-    data_area: 'DataArea'
+    data_area: "DataArea"
     byte_size: int
     array_length: int
     bit_offset: typing.Optional[OffsetSize]
     pointer: bool
     data_type_name: str
 
-    def __init__(self,
-                 name: str,
-                 offset: int,
-                 data_type: constants.AdsDataType,
-                 array_length: int,
-                 data_area: 'DataArea',
-                 type_name: str = None,
-                 bit_offset: int = None,
-                 pointer: bool = False,
-                 ):
+    def __init__(
+        self,
+        name: str,
+        offset: int,
+        data_type: constants.AdsDataType,
+        array_length: int,
+        data_area: "DataArea",
+        type_name: str = None,
+        bit_offset: int = None,
+        pointer: bool = False,
+    ):
         self.array_length = array_length
         self.data_area = data_area
         self.data_type = data_type
@@ -104,7 +106,7 @@ class Symbol:
         )
 
         if pointer and bit_offset is not None:
-            raise ValueError('Pointer with bit offset?')
+            raise ValueError("Pointer with bit offset?")
 
         self._configure_data_type()
 
@@ -122,12 +124,11 @@ class Symbol:
 
     def read(self):
         if self.bit_offset is not None:
-            raw = self.memory.read_bits(self.offset,
-                                        self.bit_offset.offset,
-                                        self.bit_offset.size)
+            raw = self.memory.read_bits(
+                self.offset, self.bit_offset.offset, self.bit_offset.size
+            )
         else:
-            offset = (self.offset if not self.pointer
-                      else self._dereference_pointer())
+            offset = self.offset if not self.pointer else self._dereference_pointer()
             raw = self.memory.read(offset, self.byte_size)
         return self.ctypes_data_type.from_buffer(raw)
 
@@ -136,7 +137,8 @@ class Symbol:
             if isinstance(value, bytes):
                 byte_value = value
                 consumed, value = structs.deserialize_data(
-                    data_type=self.data_type, data=value,
+                    data_type=self.data_type,
+                    data=value,
                     length=self.array_length,
                 )
             else:
@@ -145,24 +147,22 @@ class Symbol:
         else:
             byte_value = bytes(value)
 
-        self.log.debug('Symbol %s write %s (%s)', self, value, byte_value)
+        self.log.debug("Symbol %s write %s (%s)", self, value, byte_value)
         if self.bit_offset is not None:
-            return self.memory.write_bits(self.offset,
-                                          self.bit_offset.offset,
-                                          self.bit_offset.size,
-                                          byte_value)
+            return self.memory.write_bits(
+                self.offset, self.bit_offset.offset, self.bit_offset.size, byte_value
+            )
 
-        offset = (self.offset if not self.pointer
-                  else self._dereference_pointer())
+        offset = self.offset if not self.pointer else self._dereference_pointer()
         return self.memory.write(offset, byte_value)
 
     def _dereference_pointer(self) -> int:
         if not self.pointer:
-            raise ValueError('Not a pointer to dereference')
+            raise ValueError("Not a pointer to dereference")
         raw = self.memory.read(self.offset, ctypes.sizeof(POINTER_TYPE))
         ptr_value = POINTER_TYPE.from_buffer(raw)
         if not ptr_value:
-            raise NullPointerDereferencedError(f'{self.name}')
+            raise NullPointerDereferencedError(f"{self.name}")
         return ptr_value
 
     @property
@@ -171,50 +171,47 @@ class Symbol:
 
     @property
     def memory_range(self) -> typing.Tuple[int, int]:
-        offset = (self.offset if not self.pointer
-                  else self._dereference_pointer())
+        offset = self.offset if not self.pointer else self._dereference_pointer()
         return (offset, offset + self.byte_size)
 
     def __repr__(self):
         mem_start, mem_end = self.memory_range
-        pointer = ' pointer' if self.pointer else ''
+        pointer = " pointer" if self.pointer else ""
         return (
-            f'<{self.__class__.__name__} {self.name!r} '
-            f'[{mem_start}:{mem_end}] '
-            f'value={self.value}'
-            f'{pointer}'
-            f'>'
+            f"<{self.__class__.__name__} {self.name!r} "
+            f"[{mem_start}:{mem_end}] "
+            f"value={self.value}"
+            f"{pointer}"
+            f">"
         )
 
 
 def tmc_to_symbols(
-        item: typing.Union['pytmc.parser.Symbol',
-                           'pytmc.parser.SubItem'],
-        data_area: 'DataArea',
-        *,
-        parent_name: str = '',
-        parent_bit_offset: int = 0,
-        ) -> typing.Generator['Symbol', None, None]:
+    item: typing.Union["pytmc.parser.Symbol", "pytmc.parser.SubItem"],
+    data_area: "DataArea",
+    *,
+    parent_name: str = "",
+    parent_bit_offset: int = 0,
+) -> typing.Generator["Symbol", None, None]:
 
     bit_offset = item.BitOffs[0].bit_offset + parent_bit_offset
     bit_size = item.BitSize[0].bit_size
     byte_offset = bit_offset // 8
     if (bit_offset % 8) != 0 or (bit_size % 8) != 0:
-        bit_offset_obj = OffsetSize(bit_offset - (byte_offset * 8),
-                                    bit_size)
+        bit_offset_obj = OffsetSize(bit_offset - (byte_offset * 8), bit_size)
     else:
         bit_offset_obj = None
 
     data_type = item.data_type
 
     if parent_name:
-        symbol_name = '.'.join((parent_name, item.name))
+        symbol_name = ".".join((parent_name, item.name))
     else:
         symbol_name = item.name
 
     pointer = data_type.is_pointer or data_type.is_reference
     if not data_type.is_complex_type:
-        base_type = getattr(data_type, 'base_type', None)
+        base_type = getattr(data_type, "base_type", None)
         if base_type is not None:
             ads_type_name = base_type.name
         else:
@@ -231,7 +228,7 @@ def tmc_to_symbols(
             pointer=pointer,
             type_name=data_type.name,
         )
-        if hasattr(item, 'Comment'):
+        if hasattr(item, "Comment"):
             symbol.__doc__ = item.Comment[0].text
 
         yield symbol
@@ -241,26 +238,28 @@ def tmc_to_symbols(
 
         # TODO is this a bug?
         if isinstance(item, pytmc.parser.Symbol):
-            sub_items = list(set(sub_item[1] for sub_item in item.walk()
-                                 if len(sub_item) > 1
-                                 ))
+            sub_items = list(
+                set(sub_item[1] for sub_item in item.walk() if len(sub_item) > 1)
+            )
         else:
             sub_items = list(set(sub_item[0] for sub_item in data_type.walk()))
 
         sub_items.sort(key=lambda item: item.bit_offset)
 
         if (bit_size % 8) != 0:
-            raise ValueError('ComplexSymbol not byte aligned?')
+            raise ValueError("ComplexSymbol not byte aligned?")
 
         if pointer:
             # TODO symbol base address changes
             ...
         else:
             for sub_item in sub_items:
-                yield from tmc_to_symbols(sub_item, data_area=data_area,
-                                          parent_name=symbol_name,
-                                          parent_bit_offset=bit_offset,
-                                          )
+                yield from tmc_to_symbols(
+                    sub_item,
+                    data_area=data_area,
+                    parent_name=symbol_name,
+                    parent_bit_offset=bit_offset,
+                )
 
         yield ComplexSymbol(
             name=symbol_name,
@@ -285,8 +284,10 @@ class BasicSymbol(Symbol):
     Notably, this does not include BIGTYPE, which is represented by
     :class:`ComplexSymbol`.
     """
-    ctypes_data_type: typing.Union[typing.Type[ctypes.Array],
-                                   typing.Type[ctypes._SimpleCData]]
+
+    ctypes_data_type: typing.Union[
+        typing.Type[ctypes.Array], typing.Type[ctypes._SimpleCData]
+    ]
 
     def _configure_data_type(self):
         ctypes_base_type = self.data_type.ctypes_type
@@ -304,9 +305,7 @@ class ComplexSymbol(Symbol):
 
     def _configure_data_type(self):
         self.byte_size = self._struct_size * self.array_length
-        self.ctypes_data_type = (
-            (ctypes.c_ubyte * self._struct_size) * self.array_length
-        )
+        self.ctypes_data_type = (ctypes.c_ubyte * self._struct_size) * self.array_length
 
 
 class DataArea:
@@ -315,11 +314,14 @@ class DataArea:
     symbols: typing.Dict[str, Symbol]
     area_type: str
 
-    def __init__(self, index_group: constants.AdsIndexGroup,
-                 area_type: str,
-                 *,
-                 memory: PlcMemory = None,
-                 memory_size: typing.Optional[int] = None):
+    def __init__(
+        self,
+        index_group: constants.AdsIndexGroup,
+        area_type: str,
+        *,
+        memory: PlcMemory = None,
+        memory_size: typing.Optional[int] = None,
+    ):
 
         self.index_group = index_group
         self.area_type = area_type
@@ -330,17 +332,16 @@ class DataArea:
         elif memory_size is not None:
             self.memory = PlcMemory(memory_size)
         else:
-            raise ValueError('Must specify either memory or memory_size')
+            raise ValueError("Must specify either memory or memory_size")
 
 
 class TmcDataArea(DataArea):
-    def add_symbols(self, tmc_symbol: 'pytmc.parser.Symbol'):
-        for symbol in tmc_to_symbols(tmc_symbol,
-                                     data_area=self):  # type: Symbol
+    def add_symbols(self, tmc_symbol: "pytmc.parser.Symbol"):
+        for symbol in tmc_to_symbols(tmc_symbol, data_area=self):  # type: Symbol
             self.symbols[symbol.name] = symbol
 
     def __repr__(self):
-        return f'<{self.__class__.__name__} {self.area_type}>'
+        return f"<{self.__class__.__name__} {self.area_type}>"
 
 
 class TmcTypes(enum.Enum):
@@ -381,7 +382,7 @@ class TmcTypes(enum.Enum):
 
     OTCID = AdsDataType.UINT32
 
-    GUID = AdsDataType.UINT64   # TODO: incorrect, 128-bit
+    GUID = AdsDataType.UINT64  # TODO: incorrect, 128-bit
     PVOID = AdsDataType.UINT64  # TODO: 32 on 32-bit machines...
     ITComObjectServer = AdsDataType.UINT64  # TODO: 32 on 32-bit machines...
 
@@ -421,16 +422,16 @@ class Database:
 
 
 class TmcDatabase(Database):
-    tmc: 'pytmc.parser.TcModuleClass'
+    tmc: "pytmc.parser.TcModuleClass"
 
     def __init__(self, tmc):
         super().__init__()
 
         if pytmc is None:
-            raise RuntimeError('pytmc unavailable for .tmc file support')
+            raise RuntimeError("pytmc unavailable for .tmc file support")
 
         if not isinstance(tmc, pytmc.parser.TcModuleClass):
-            module_logger.debug('Loading tmc file: %s', tmc)
+            module_logger.debug("Loading tmc file: %s", tmc)
             tmc = pytmc.parser.parse(tmc)
 
         self.tmc = tmc
@@ -450,24 +451,25 @@ class TmcDatabase(Database):
     def _load_data_areas(self):
         for tmc_area in self.tmc.find(pytmc.parser.DataArea):
             info = tmc_area.AreaNo[0].attributes
-            area_type = info['AreaType']
-            create_symbols = info.get('CreateSymbols', 'true')
+            area_type = info["AreaType"]
+            create_symbols = info.get("CreateSymbols", "true")
             byte_size = int(tmc_area.ByteSize[0].text)
-            if create_symbols != 'true':
+            if create_symbols != "true":
                 continue
 
             index_group = DataAreaIndexGroup[area_type]
             area = self.add_data_area(
-                index_group, TmcDataArea(index_group, area_type,
-                                         memory_size=byte_size))
+                index_group, TmcDataArea(index_group, area_type, memory_size=byte_size)
+            )
 
             for sym in tmc_area.find(pytmc.parser.Symbol):
                 area.add_symbols(sym)
 
         self._configure_plc_memory_area()
 
-    def add_data_area(self, index_group: constants.AdsIndexGroup,
-                      area: DataArea) -> DataArea:
+    def add_data_area(
+        self, index_group: constants.AdsIndexGroup, area: DataArea
+    ) -> DataArea:
         self.data_areas.append(area)
         self.index_groups[index_group] = area
         return area
@@ -478,13 +480,13 @@ class TmcDatabase(Database):
 
         index_group = constants.AdsIndexGroup.PLC_MEMORY_AREA
         self.add_data_area(
-            index_group, DataArea(index_group, 'PLC_MEMORY_AREA',
-                                  memory_size=100_000))
+            index_group, DataArea(index_group, "PLC_MEMORY_AREA", memory_size=100_000)
+        )
 
 
 def map_symbols_in_memory(
-        memory: PlcMemory, symbols: typing.List[Symbol]
-        ) -> typing.Dict[int, typing.List[Symbol]]:
+    memory: PlcMemory, symbols: typing.List[Symbol]
+) -> typing.Dict[int, typing.List[Symbol]]:
     """
     Map out memory indicating where Symbols are located.
 
@@ -525,9 +527,10 @@ def map_symbols_in_memory(
 
 
 def dump_memory(
-        memory: PlcMemory, symbols: typing.List[Symbol],
-        file=sys.stdout,
-        ) -> typing.Dict[int, typing.List[Symbol]]:
+    memory: PlcMemory,
+    symbols: typing.List[Symbol],
+    file=sys.stdout,
+) -> typing.Dict[int, typing.List[Symbol]]:
     """
     Map out memory indicating where Symbols are located and print to `file`.
 
@@ -554,19 +557,18 @@ def dump_memory(
         return
 
     zeros = int(math.log10(len(memory))) + 1
-    memory_format = '{:>0%d}' % (zeros, )
-    range_format = f'{memory_format} ~ {memory_format}'
+    memory_format = "{:>0%d}" % (zeros,)
+    range_format = f"{memory_format} ~ {memory_format}"
     indent_size = len(range_format.format(0, 0))
 
-    byte_aligned_symbol = '{symbol.name}{pointer}'
+    byte_aligned_symbol = "{symbol.name}{pointer}"
     bit_aligned_symbol = (
-        '{symbol.name}{pointer}'
-        '&{symbol.bit_offset.offset}#{symbol.bit_offset.size}'
+        "{symbol.name}{pointer}" "&{symbol.bit_offset.offset}#{symbol.bit_offset.size}"
     )
-    spacer = '\n+ '
+    spacer = "\n+ "
 
     def format_symbol(symbol):
-        pointer = '*' if symbol.pointer else ''
+        pointer = "*" if symbol.pointer else ""
         if symbol.bit_offset is not None:
             return bit_aligned_symbol.format(symbol=symbol, pointer=pointer)
         return byte_aligned_symbol.format(symbol=symbol, pointer=pointer)
@@ -603,7 +605,6 @@ def dump_memory(
         else:
             addr = memory_format.format(start_idx)
 
-        wrapped = textwrap.indent(output[start_idx], ' ' * (indent_size + 1))
-        print(' | '.join((addr.ljust(indent_size), wrapped.lstrip())),
-              file=file)
+        wrapped = textwrap.indent(output[start_idx], " " * (indent_size + 1))
+        print(" | ".join((addr.ljust(indent_size), wrapped.lstrip())), file=file)
         start_idx = end_idx + 1

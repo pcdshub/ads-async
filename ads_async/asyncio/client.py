@@ -10,7 +10,7 @@ from .. import constants, exceptions, log, protocol, structs
 from ..constants import AdsTransmissionMode, AmsPort
 from . import utils
 
-_target_address = contextvars.ContextVar('_target_address', default=None)
+_target_address = contextvars.ContextVar("_target_address", default=None)
 
 
 class Notification(utils.CallbackHandler):
@@ -24,9 +24,13 @@ class Notification(utils.CallbackHandler):
     it should be made by calling the ``add_notification()`` methods on
     the connection (or ``Symbol``).
     """
+
     def __init__(self, owner, user_callback_executor, command, port):
-        super().__init__(notification_id=0, handle=None,
-                         user_callback_executor=user_callback_executor)
+        super().__init__(
+            notification_id=0,
+            handle=None,
+            user_callback_executor=user_callback_executor,
+        )
         self.command = command
         self.port = port
         self.owner = owner
@@ -34,20 +38,14 @@ class Notification(utils.CallbackHandler):
         self.most_recent_notification = None
 
     async def _response_handler(
-        self,
-        header,
-        response: structs.AoENotificationHandleResponse
+        self, header, response: structs.AoENotificationHandleResponse
     ):
         if response.result != constants.AdsError.NOERR:
-            self.log.debug(
-                "Notification failed to initialize: %s", response.result
-            )
+            self.log.debug("Notification failed to initialize: %s", response.result)
             return
 
         self.handle = response.handle
-        self.log.debug(
-            "Notification initialized (handle=%d)", self.handle
-        )
+        self.log.debug("Notification initialized (handle=%d)", self.handle)
         # TODO: unsubscribe if no listeners?
         circuit = self.owner
         circuit.circuit.handle_to_notification[response.handle] = self
@@ -176,7 +174,7 @@ class Notification(utils.CallbackHandler):
 class _BlockingRequest:
     """Helper for handling blocking requests in the client."""
 
-    owner: 'AsyncioClient'
+    owner: "AsyncioClient"
     request: structs.T_AdsStructure
     header: Optional[structs.AoEHeader]
     response: Optional[structs.T_AdsStructure]
@@ -212,7 +210,8 @@ class _BlockingRequest:
 
 class Symbol:
     """A symbol in an AsyncioClient.  Not to be instantiated by itself."""
-    owner: 'AsyncioClient'
+
+    owner: "AsyncioClient"
     index_group: Optional[int]
     index_offset: Optional[int]
     name: Optional[str]
@@ -220,14 +219,15 @@ class Symbol:
     handle: Optional[int]
     string_encoding: str
 
-    def __init__(self,
-                 owner: 'AsyncioClient',
-                 *,
-                 index_group: Optional[int] = None,
-                 index_offset: Optional[int] = None,
-                 name: Optional[str] = None,
-                 string_encoding: str = constants.ADS_ASYNC_STRING_ENCODING,
-                 ):
+    def __init__(
+        self,
+        owner: "AsyncioClient",
+        *,
+        index_group: Optional[int] = None,
+        index_offset: Optional[int] = None,
+        name: Optional[str] = None,
+        string_encoding: str = constants.ADS_ASYNC_STRING_ENCODING,
+    ):
         self.owner = owner
         self.name = name
         self.index_group = index_group
@@ -255,15 +255,13 @@ class Symbol:
     async def initialize(self):
         if self.index_group is None or self.index_offset is None:
             if self.name is None:
-                raise ValueError(
-                    'Must specify either name or index_group/index_offset'
-                )
+                raise ValueError("Must specify either name or index_group/index_offset")
             self.info = await self.owner.get_symbol_info_by_name(self.name)
             self.index_group = self.info.index_group
             self.index_offset = self.info.index_offset
         else:
             # self.info = await self.owner.get_symbol_info_by_...()
-            raise NotImplementedError('index_group')
+            raise NotImplementedError("index_group")
 
         self.handle = await self.owner.get_symbol_handle_by_name(self.name)
 
@@ -286,8 +284,8 @@ class Symbol:
 
         if self.info.data_type == constants.AdsDataType.STRING:
             try:
-                data = b''.join(data)
-                data = data[:data.index(0)]
+                data = b"".join(data)
+                data = data[: data.index(0)]
                 return str(data, self.string_encoding)
             except ValueError:
                 # Fall through
@@ -297,14 +295,13 @@ class Symbol:
 
 
 class AsyncioCircuit:
-    """
+    """"""
 
-    """
     circuit: protocol.ClientCircuit
 
     def __init__(
         self,
-        connection: 'AsyncioClient',
+        connection: "AsyncioClient",
         net_id: str,
         default_port=AmsPort.R0_PLC_TC3,
     ):
@@ -323,7 +320,8 @@ class AsyncioCircuit:
         self._symbols.clear()
 
     async def send(
-        self, *items,
+        self,
+        *items,
         ads_error: constants.AdsError = constants.AdsError.NOERR,
         port: Optional[AmsPort] = None,
         response_handler: Optional[typing.Coroutine] = None,
@@ -346,7 +344,8 @@ class AsyncioCircuit:
             Returns the invocation ID associated with the request.
         """
         invoke_id, bytes_to_send = self.circuit.request_to_wire(
-            *items, ads_error=ads_error,
+            *items,
+            ads_error=ads_error,
             target=(self.net_id, port or self.default_port),
         )
         if response_handler is not None:
@@ -355,26 +354,22 @@ class AsyncioCircuit:
         await self.connection._send_raw(bytes_to_send)
         return invoke_id
 
-    async def _handle_command(
-        self,
-        header: structs.AoEHeader,
-        item
-    ):
+    async def _handle_command(self, header: structs.AoEHeader, item):
         """Handle a received command."""
         invoke_id_handlers = self._response_handlers.get(header.invoke_id, [])
         try:
             _ = self.circuit.handle_command(header, item)
         except protocol.MissingHandlerError:
             if not invoke_id_handlers:
-                self.log.debug('No registered handler for %s %s', header, item)
+                self.log.debug("No registered handler for %s %s", header, item)
         except Exception:
-            self.log.exception('handle_command failed with unknown error')
+            self.log.exception("handle_command failed with unknown error")
 
         for handler in invoke_id_handlers:
             try:
                 await handler(header, item)
             except Exception:
-                self.log.exception('handle_command failed with unknown error')
+                self.log.exception("handle_command failed with unknown error")
 
     def enable_log_system(self, length=255) -> Notification:
         """
@@ -468,14 +463,12 @@ class AsyncioCircuit:
             The port to send the item to.
         """
         port = port or self.default_port
-        async with _BlockingRequest(
-            self, item, port=port
-        ) as req:
+        async with _BlockingRequest(self, item, port=port) as req:
             await req.wait()
-        result = getattr(req, 'result', None)
+        result = getattr(req, "result", None)
         if result is not None and result != constants.AdsError.NOERR:
             raise exceptions.RequestFailedError(
-                f'Request {item} failed with {result}',
+                f"Request {item} failed with {result}",
                 code=result,
                 request=req,
             )
@@ -483,14 +476,9 @@ class AsyncioCircuit:
 
     async def get_device_information(self) -> structs.AdsDeviceInfo:
         """Get device information."""
-        return await self.write_and_read(
-            self.circuit.get_device_information()
-        )
+        return await self.write_and_read(self.circuit.get_device_information())
 
-    async def get_symbol_info_by_name(
-        self,
-        name: str
-    ) -> structs.AdsSymbolEntry:
+    async def get_symbol_info_by_name(self, name: str) -> structs.AdsSymbolEntry:
         """
         Get symbol information by name.
 
@@ -504,17 +492,10 @@ class AsyncioCircuit:
         info : AdsSymbolEntry
             The symbol entry information.
         """
-        res = await self.write_and_read(
-            self.circuit.get_symbol_info_by_name(name)
-        )
-        return res.upcast_by_index_group(
-            constants.AdsIndexGroup.SYM_INFOBYNAMEEX
-        )
+        res = await self.write_and_read(self.circuit.get_symbol_info_by_name(name))
+        return res.upcast_by_index_group(constants.AdsIndexGroup.SYM_INFOBYNAMEEX)
 
-    async def get_symbol_handle_by_name(
-        self,
-        name: str
-    ) -> structs.AdsSymbolEntry:
+    async def get_symbol_handle_by_name(self, name: str) -> structs.AdsSymbolEntry:
         """
         Get symbol handle by name.
 
@@ -528,9 +509,7 @@ class AsyncioCircuit:
         handle : int
             The symbol handle.
         """
-        res = await self.write_and_read(
-            self.circuit.get_symbol_handle_by_name(name)
-        )
+        res = await self.write_and_read(self.circuit.get_symbol_handle_by_name(name))
         return res.as_handle_response().handle
 
     async def release_handle(
@@ -596,7 +575,7 @@ class AsyncioCircuit:
 
     async def get_task_count(self) -> int:
         """Get the number of tasks running on the PLC."""
-        count, = await self.get_symbol_by_name(
+        (count,) = await self.get_symbol_by_name(
             "TwinCAT_SystemInfoVarList._AppInfo.TaskCnt"
         ).read()
         return count
@@ -615,8 +594,7 @@ class AsyncioCircuit:
         """Prune all unknown notification IDs by unregistering each of them."""
         for source, handle in self.circuit.unknown_notifications:
             _, port = source
-            await self.send(self.circuit.remove_notification(handle),
-                            port=port)
+            await self.send(self.circuit.remove_notification(handle), port=port)
 
 
 class AsyncioClient:  # TODO -> Connection?
@@ -650,7 +628,7 @@ class AsyncioClient:  # TODO -> Connection?
         self.connection = protocol.ClientConnection(
             their_address=their_address,
             our_net_id=our_net_id,
-            our_address=('(client)', 0),  # TODO
+            our_address=("(client)", 0),  # TODO
         )
         self.log = self.connection.log
         self._queue = utils.AsyncioQueue()
@@ -686,7 +664,7 @@ class AsyncioClient:  # TODO -> Connection?
             net_id = str(net_id)
 
         if net_id is None:
-            net_id = f'{self.connection.their_address[0]}.1.1'
+            net_id = f"{self.connection.their_address[0]}.1.1"
 
         try:
             return self._circuits[net_id]
@@ -707,7 +685,7 @@ class AsyncioClient:  # TODO -> Connection?
         try:
             self.writer.close()
         except OSError as ex:
-            self.log.debug('Error closing writer: %s', ex, exc_info=ex)
+            self.log.debug("Error closing writer: %s", ex, exc_info=ex)
 
     async def wait_for_connection(self):
         """Block until connected."""
@@ -716,47 +694,46 @@ class AsyncioClient:  # TODO -> Connection?
     async def _connect(self):
         # self._tasks.create(self._request_queue_loop())
         while True:
-            self.log.debug('Connecting...')
+            self.log.debug("Connecting...")
             try:
                 self.reader, self.writer = await asyncio.open_connection(
                     host=self.connection.their_address[0],
                     port=self.connection.their_address[1],
                 )
             except OSError:
-                self.log.exception('Failed to connect')
+                self.log.exception("Failed to connect")
             else:
                 await self._connected_loop()
 
             if self.reconnect_rate is None:
-                self.log.debug('Not reconnecting.')
+                self.log.debug("Not reconnecting.")
                 break
 
-            self.log.debug(
-                'Reconnecting in %d seconds...', self.reconnect_rate
-            )
+            self.log.debug("Reconnecting in %d seconds...", self.reconnect_rate)
             await asyncio.sleep(self.reconnect_rate)
 
     async def _connected_loop(self):
-        self.log.debug('Connected')
+        self.log.debug("Connected")
 
-        our_ip, our_port, *_ = self.writer.get_extra_info('sockname')
+        our_ip, our_port, *_ = self.writer.get_extra_info("sockname")
 
         addr = ipaddress.ip_address(our_ip)
         if isinstance(addr, ipaddress.IPv6Address):
-            our_ip = f'[{our_ip}]'
+            our_ip = f"[{our_ip}]"
 
         self.connection.our_address = (our_ip, our_port)
         if self.connection.our_net_id is None:
-            self.connection.our_net_id = f'{our_ip}.1.1'
-            self.log.debug('Auto-configuring local net ID: %s',
-                           self.connection.our_net_id)
+            self.connection.our_net_id = f"{our_ip}.1.1"
+            self.log.debug(
+                "Auto-configuring local net ID: %s", self.connection.our_net_id
+            )
 
         self._connect_event.set()
         while True:
             data = await self.reader.read(1024)
             if not len(data):
                 self.connection.disconnected()
-                self.log.debug('Disconnected')
+                self.log.debug("Disconnected")
                 self._connect_event.clear()
                 break
 

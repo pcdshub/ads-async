@@ -4,21 +4,19 @@ import os
 import typing
 
 ADS_TCP_SERVER_PORT = 0xBF02
-ADS_ASYNC_STRING_ENCODING = os.environ.get(
-    'ADS_ASYNC_STRING_ENCODING', 'utf-8'
-)
+ADS_ASYNC_STRING_ENCODING = os.environ.get("ADS_ASYNC_STRING_ENCODING", "utf-8")
 # TODO: some scenarios where ADS data can be big endian?
 
 
 class Role(str, enum.Enum):
-    Client = 'Client'
-    Server = 'Server'
+    Client = "Client"
+    Server = "Server"
 
 
 class AmsPort(enum.IntEnum):
     LOGGER = 100
     R0_RTIME = 200
-    R0_TRACE = (R0_RTIME + 90)
+    R0_TRACE = R0_RTIME + 90
     R0_IO = 300
     R0_SPS = 400
     R0_NC = 500
@@ -70,7 +68,7 @@ class AoEHeaderFlag(enum.IntFlag):
     NO_RETURN = 0b0000_0010  # 2
     ADS_COMMAND = 0b0000_0100  # 4
     SYSTEM_COMMAND = 0b0000_1000  # 8
-    HIGH_PRIORITY_COMMAND = 0b0001_0000 # 16
+    HIGH_PRIORITY_COMMAND = 0b0001_0000  # 16
     TIMESTAMP_ADDED = 0b0010_0000  # 32
     UDP_COMMAND = 0b0100_0000  # 64
     INIT_COMMAND = 0b1000_0000  # 128
@@ -166,8 +164,8 @@ class AdsIndexGroup(enum.IntEnum):
     PLC_DATA_AREA = 0x4040
 
 
-ADSIOFFS_DEVDATA_ADSSTATE = 0x0000      # ads state of device
-ADSIOFFS_DEVDATA_DEVSTATE = 0x0002      # device state
+ADSIOFFS_DEVDATA_ADSSTATE = 0x0000  # ads state of device
+ADSIOFFS_DEVDATA_DEVSTATE = 0x0002  # device state
 
 # Error code base values:
 # Global Return codes
@@ -182,154 +180,154 @@ class AdsError(enum.IntEnum):
     NOERR = 0x00
 
     # target port not found, possibly the ADS Server is not started
-    GLOBALERR_TARGET_PORT = (0x06 + ERR_GLOBAL)
+    GLOBALERR_TARGET_PORT = 0x06 + ERR_GLOBAL
     # target machine not found, possibly missing ADS routes
-    GLOBALERR_MISSING_ROUTE = (0x07 + ERR_GLOBAL)
+    GLOBALERR_MISSING_ROUTE = 0x07 + ERR_GLOBAL
     # No memory
-    GLOBALERR_NO_MEMORY = (0x19 + ERR_GLOBAL)
+    GLOBALERR_NO_MEMORY = 0x19 + ERR_GLOBAL
     # TCP send error
-    GLOBALERR_TCP_SEND = (0x1A + ERR_GLOBAL)
+    GLOBALERR_TCP_SEND = 0x1A + ERR_GLOBAL
 
     # The desired port number is already assigned
-    ROUTERERR_PORTALREADYINUSE = (0x06 + ERR_ROUTER)
+    ROUTERERR_PORTALREADYINUSE = 0x06 + ERR_ROUTER
     # Port not registered
-    ROUTERERR_NOTREGISTERED = (0x07 + ERR_ROUTER)
+    ROUTERERR_NOTREGISTERED = 0x07 + ERR_ROUTER
     # The maximum number of Ports reached
-    ROUTERERR_NOMOREQUEUES = (0x08 + ERR_ROUTER)
+    ROUTERERR_NOMOREQUEUES = 0x08 + ERR_ROUTER
 
     # Error class < device error >
-    DEVICE_ERROR = (0x00 + ERR_ADSERRS)
+    DEVICE_ERROR = 0x00 + ERR_ADSERRS
     # Service is not supported by server
-    DEVICE_SRVNOTSUPP = (0x01 + ERR_ADSERRS)
+    DEVICE_SRVNOTSUPP = 0x01 + ERR_ADSERRS
     # invalid indexGroup
-    DEVICE_INVALIDGRP = (0x02 + ERR_ADSERRS)
+    DEVICE_INVALIDGRP = 0x02 + ERR_ADSERRS
     # invalid indexOffset
-    DEVICE_INVALIDOFFSET = (0x03 + ERR_ADSERRS)
+    DEVICE_INVALIDOFFSET = 0x03 + ERR_ADSERRS
     # reading/writing not permitted
-    DEVICE_INVALIDACCESS = (0x04 + ERR_ADSERRS)
+    DEVICE_INVALIDACCESS = 0x04 + ERR_ADSERRS
     # parameter size not correct
-    DEVICE_INVALIDSIZE = (0x05 + ERR_ADSERRS)
+    DEVICE_INVALIDSIZE = 0x05 + ERR_ADSERRS
     # invalid parameter value(s)
-    DEVICE_INVALIDDATA = (0x06 + ERR_ADSERRS)
+    DEVICE_INVALIDDATA = 0x06 + ERR_ADSERRS
     # device is not in a ready state
-    DEVICE_NOTREADY = (0x07 + ERR_ADSERRS)
+    DEVICE_NOTREADY = 0x07 + ERR_ADSERRS
     # device is busy
-    DEVICE_BUSY = (0x08 + ERR_ADSERRS)
+    DEVICE_BUSY = 0x08 + ERR_ADSERRS
     # invalid context (must be InWindows)
-    DEVICE_INVALIDCONTEXT = (0x09 + ERR_ADSERRS)
+    DEVICE_INVALIDCONTEXT = 0x09 + ERR_ADSERRS
     # out of memory
-    DEVICE_NOMEMORY = (0x0A + ERR_ADSERRS)
+    DEVICE_NOMEMORY = 0x0A + ERR_ADSERRS
     # invalid parameter value(s)
-    DEVICE_INVALIDPARM = (0x0B + ERR_ADSERRS)
+    DEVICE_INVALIDPARM = 0x0B + ERR_ADSERRS
     # not found (files, ...)
-    DEVICE_NOTFOUND = (0x0C + ERR_ADSERRS)
+    DEVICE_NOTFOUND = 0x0C + ERR_ADSERRS
     # syntax error in comand or file
-    DEVICE_SYNTAX = (0x0D + ERR_ADSERRS)
+    DEVICE_SYNTAX = 0x0D + ERR_ADSERRS
     # objects do not match
-    DEVICE_INCOMPATIBLE = (0x0E + ERR_ADSERRS)
+    DEVICE_INCOMPATIBLE = 0x0E + ERR_ADSERRS
     # object already exists
-    DEVICE_EXISTS = (0x0F + ERR_ADSERRS)
+    DEVICE_EXISTS = 0x0F + ERR_ADSERRS
     # symbol not found
-    DEVICE_SYMBOLNOTFOUND = (0x10 + ERR_ADSERRS)
+    DEVICE_SYMBOLNOTFOUND = 0x10 + ERR_ADSERRS
     # symbol version invalid, possibly caused by an 'onlinechange' -> try to
     # release handle and get a new one
-    DEVICE_SYMBOLVERSIONINVALID = (0x11 + ERR_ADSERRS)
+    DEVICE_SYMBOLVERSIONINVALID = 0x11 + ERR_ADSERRS
     # server is in invalid state
-    DEVICE_INVALIDSTATE = (0x12 + ERR_ADSERRS)
+    DEVICE_INVALIDSTATE = 0x12 + ERR_ADSERRS
     # AdsTransMode not supported
-    DEVICE_TRANSMODENOTSUPP = (0x13 + ERR_ADSERRS)
+    DEVICE_TRANSMODENOTSUPP = 0x13 + ERR_ADSERRS
     # Notification handle is invalid, possibly caussed by an 'onlinechange' ->
     # try to release handle and get a new one
-    DEVICE_NOTIFYHNDINVALID = (0x14 + ERR_ADSERRS)
+    DEVICE_NOTIFYHNDINVALID = 0x14 + ERR_ADSERRS
     # Notification client not registered
-    DEVICE_CLIENTUNKNOWN = (0x15 + ERR_ADSERRS)
+    DEVICE_CLIENTUNKNOWN = 0x15 + ERR_ADSERRS
     # no more notification handles
-    DEVICE_NOMOREHDLS = (0x16 + ERR_ADSERRS)
+    DEVICE_NOMOREHDLS = 0x16 + ERR_ADSERRS
     # size for watch to big
-    DEVICE_INVALIDWATCHSIZE = (0x17 + ERR_ADSERRS)
+    DEVICE_INVALIDWATCHSIZE = 0x17 + ERR_ADSERRS
     # device not initialized
-    DEVICE_NOTINIT = (0x18 + ERR_ADSERRS)
+    DEVICE_NOTINIT = 0x18 + ERR_ADSERRS
     # device has a timeout
-    DEVICE_TIMEOUT = (0x19 + ERR_ADSERRS)
+    DEVICE_TIMEOUT = 0x19 + ERR_ADSERRS
     # query interface failed
-    DEVICE_NOINTERFACE = (0x1A + ERR_ADSERRS)
+    DEVICE_NOINTERFACE = 0x1A + ERR_ADSERRS
     # wrong interface required
-    DEVICE_INVALIDINTERFACE = (0x1B + ERR_ADSERRS)
+    DEVICE_INVALIDINTERFACE = 0x1B + ERR_ADSERRS
     # class ID is invalid
-    DEVICE_INVALIDCLSID = (0x1C + ERR_ADSERRS)
+    DEVICE_INVALIDCLSID = 0x1C + ERR_ADSERRS
     # object ID is invalid
-    DEVICE_INVALIDOBJID = (0x1D + ERR_ADSERRS)
+    DEVICE_INVALIDOBJID = 0x1D + ERR_ADSERRS
     # request is pending
-    DEVICE_PENDING = (0x1E + ERR_ADSERRS)
+    DEVICE_PENDING = 0x1E + ERR_ADSERRS
     # request is aborted
-    DEVICE_ABORTED = (0x1F + ERR_ADSERRS)
+    DEVICE_ABORTED = 0x1F + ERR_ADSERRS
     # signal warning
-    DEVICE_WARNING = (0x20 + ERR_ADSERRS)
+    DEVICE_WARNING = 0x20 + ERR_ADSERRS
     # invalid array index
-    DEVICE_INVALIDARRAYIDX = (0x21 + ERR_ADSERRS)
+    DEVICE_INVALIDARRAYIDX = 0x21 + ERR_ADSERRS
     # symbol not active, possibly caussed by an 'onlinechange' -> try to
     # release handle and get a new one
-    DEVICE_SYMBOLNOTACTIVE = (0x22 + ERR_ADSERRS)
+    DEVICE_SYMBOLNOTACTIVE = 0x22 + ERR_ADSERRS
     # access denied
-    DEVICE_ACCESSDENIED = (0x23 + ERR_ADSERRS)
+    DEVICE_ACCESSDENIED = 0x23 + ERR_ADSERRS
     # no license found -> Activate license for TwinCAT 3 function
-    DEVICE_LICENSENOTFOUND = (0x24 + ERR_ADSERRS)
+    DEVICE_LICENSENOTFOUND = 0x24 + ERR_ADSERRS
     # license expired
-    DEVICE_LICENSEEXPIRED = (0x25 + ERR_ADSERRS)
+    DEVICE_LICENSEEXPIRED = 0x25 + ERR_ADSERRS
     # license exceeded
-    DEVICE_LICENSEEXCEEDED = (0x26 + ERR_ADSERRS)
+    DEVICE_LICENSEEXCEEDED = 0x26 + ERR_ADSERRS
     # license invalid
-    DEVICE_LICENSEINVALID = (0x27 + ERR_ADSERRS)
+    DEVICE_LICENSEINVALID = 0x27 + ERR_ADSERRS
     # license invalid system id
-    DEVICE_LICENSESYSTEMID = (0x28 + ERR_ADSERRS)
+    DEVICE_LICENSESYSTEMID = 0x28 + ERR_ADSERRS
     # license not time limited
-    DEVICE_LICENSENOTIMELIMIT = (0x29 + ERR_ADSERRS)
+    DEVICE_LICENSENOTIMELIMIT = 0x29 + ERR_ADSERRS
     # license issue time in the future
-    DEVICE_LICENSEFUTUREISSUE = (0x2A + ERR_ADSERRS)
+    DEVICE_LICENSEFUTUREISSUE = 0x2A + ERR_ADSERRS
     # license time period to long
-    DEVICE_LICENSETIMETOLONG = (0x2B + ERR_ADSERRS)
+    DEVICE_LICENSETIMETOLONG = 0x2B + ERR_ADSERRS
     # exception in device specific code -> Check each device transistions
-    DEVICE_EXCEPTION = (0x2C + ERR_ADSERRS)
+    DEVICE_EXCEPTION = 0x2C + ERR_ADSERRS
     # license file read twice
-    DEVICE_LICENSEDUPLICATED = (0x2D + ERR_ADSERRS)
+    DEVICE_LICENSEDUPLICATED = 0x2D + ERR_ADSERRS
     # invalid signature
-    DEVICE_SIGNATUREINVALID = (0x2E + ERR_ADSERRS)
+    DEVICE_SIGNATUREINVALID = 0x2E + ERR_ADSERRS
     # public key certificate
-    DEVICE_CERTIFICATEINVALID = (0x2F + ERR_ADSERRS)
+    DEVICE_CERTIFICATEINVALID = 0x2F + ERR_ADSERRS
     # Error class < client error >
-    CLIENT_ERROR = (0x40 + ERR_ADSERRS)
+    CLIENT_ERROR = 0x40 + ERR_ADSERRS
     # invalid parameter at service call
-    CLIENT_INVALIDPARM = (0x41 + ERR_ADSERRS)
+    CLIENT_INVALIDPARM = 0x41 + ERR_ADSERRS
     # polling list	is empty
-    CLIENT_LISTEMPTY = (0x42 + ERR_ADSERRS)
+    CLIENT_LISTEMPTY = 0x42 + ERR_ADSERRS
     # var connection already in use
-    CLIENT_VARUSED = (0x43 + ERR_ADSERRS)
+    CLIENT_VARUSED = 0x43 + ERR_ADSERRS
     # invoke id in use
-    CLIENT_DUPLINVOKEID = (0x44 + ERR_ADSERRS)
+    CLIENT_DUPLINVOKEID = 0x44 + ERR_ADSERRS
     # timeout elapsed -> Check ADS routes of sender and receiver and your
     # [firewall
     # setting](http://infosys.beckhoff.com/content/1033/tcremoteaccess/html/tcremoteaccess_firewall.html?id=12027)
-    CLIENT_SYNCTIMEOUT = (0x45 + ERR_ADSERRS)
+    CLIENT_SYNCTIMEOUT = 0x45 + ERR_ADSERRS
     # error in win32 subsystem
-    CLIENT_W32ERROR = (0x46 + ERR_ADSERRS)
+    CLIENT_W32ERROR = 0x46 + ERR_ADSERRS
     # Invalid client timeout value
-    CLIENT_TIMEOUTINVALID = (0x47 + ERR_ADSERRS)
+    CLIENT_TIMEOUTINVALID = 0x47 + ERR_ADSERRS
     # ads dll
-    CLIENT_PORTNOTOPEN = (0x48 + ERR_ADSERRS)
+    CLIENT_PORTNOTOPEN = 0x48 + ERR_ADSERRS
     # ads dll
-    CLIENT_NOAMSADDR = (0x49 + ERR_ADSERRS)
+    CLIENT_NOAMSADDR = 0x49 + ERR_ADSERRS
     # internal error in ads sync
-    CLIENT_SYNCINTERNAL = (0x50 + ERR_ADSERRS)
+    CLIENT_SYNCINTERNAL = 0x50 + ERR_ADSERRS
     # hash table overflow
-    CLIENT_ADDHASH = (0x51 + ERR_ADSERRS)
+    CLIENT_ADDHASH = 0x51 + ERR_ADSERRS
     # key not found in hash table
-    CLIENT_REMOVEHASH = (0x52 + ERR_ADSERRS)
+    CLIENT_REMOVEHASH = 0x52 + ERR_ADSERRS
     # no more symbols in cache
-    CLIENT_NOMORESYM = (0x53 + ERR_ADSERRS)
+    CLIENT_NOMORESYM = 0x53 + ERR_ADSERRS
     # invalid response received
-    CLIENT_SYNCRESINVALID = (0x54 + ERR_ADSERRS)
+    CLIENT_SYNCRESINVALID = 0x54 + ERR_ADSERRS
     # sync port is locked
-    CLIENT_SYNCPORTLOCKED = (0x55 + ERR_ADSERRS)
+    CLIENT_SYNCPORTLOCKED = 0x55 + ERR_ADSERRS
 
 
 class AdsDataType(enum.IntEnum):
@@ -351,7 +349,7 @@ class AdsDataType(enum.IntEnum):
     BIT = 33
     MAXTYPES = 34
 
-    to_ctypes: typing.Mapping['AdsDataType', typing.Type[ctypes._SimpleCData]]
+    to_ctypes: typing.Mapping["AdsDataType", typing.Type[ctypes._SimpleCData]]
 
     @property
     def ctypes_type(self) -> typing.Type[ctypes._SimpleCData]:
@@ -416,13 +414,13 @@ class AdsState(enum.IntEnum):  # uint16
 
 
 class AdsSymbolFlag(enum.IntFlag):
-    PERSISTENT = (1 << 0)
-    BITVALUE = (1 << 1)
-    REFERENCETO = (1 << 2)
-    TYPEGUID = (1 << 3)
-    TCCOMIFACEPTR = (1 << 4)
-    READONLY = (1 << 5)
-    CONTEXTMASK = (0xF00)
+    PERSISTENT = 1 << 0
+    BITVALUE = 1 << 1
+    REFERENCETO = 1 << 2
+    TYPEGUID = 1 << 3
+    TCCOMIFACEPTR = 1 << 4
+    READONLY = 1 << 5
+    CONTEXTMASK = 0xF00
 
 
 SDO_UPLOAD = 0xF302

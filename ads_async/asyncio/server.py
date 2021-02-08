@@ -11,7 +11,7 @@ logger = logging.getLogger(__name__)
 
 
 class AsyncioServerConnection:
-    server: 'AsyncioServer'
+    server: "AsyncioServer"
     connection: protocol.ServerConnection
     log: log.ComposableLogAdapter
     reader: asyncio.StreamReader
@@ -19,7 +19,7 @@ class AsyncioServerConnection:
 
     def __init__(
         self,
-        server: 'AsyncioServer',
+        server: "AsyncioServer",
         connection: protocol.ServerConnection,
         reader: asyncio.StreamReader,
         writer: asyncio.StreamWriter,
@@ -36,13 +36,12 @@ class AsyncioServerConnection:
         self,
         *items,
         request_header: structs.AoEHeader,
-        ads_error: constants.AdsError = constants.AdsError.NOERR
+        ads_error: constants.AdsError = constants.AdsError.NOERR,
     ):
         circuit = self.connection.get_circuit(request_header.source.net_id)
         bytes_to_send = circuit.response_to_wire(
-            *items,
-            request_header=request_header,
-            ads_error=ads_error)
+            *items, request_header=request_header, ads_error=ads_error
+        )
         self.writer.write(bytes_to_send)
         await self.writer.drain()
 
@@ -62,11 +61,10 @@ class AsyncioServerConnection:
         try:
             response = circuit.handle_command(header, item)
         except exceptions.RequestFailedError as ex:
-            logger.debug('handle_command failed with caught error',
-                         exc_info=ex)
+            logger.debug("handle_command failed with caught error", exc_info=ex)
             response = ex
         except Exception as ex:
-            logger.exception('handle_command failed with unknown error')
+            logger.exception("handle_command failed with unknown error")
             response = exceptions.RequestFailedError(
                 code=constants.AdsError.DEVICE_ERROR,  # TODO
                 reason=str(ex),
@@ -76,26 +74,27 @@ class AsyncioServerConnection:
         if response is None:
             response = exceptions.RequestFailedError(
                 code=constants.AdsError.DEVICE_ERROR,  # TODO
-                reason='unhandled codepath',
+                reason="unhandled codepath",
                 request=item,
             )
-            logger.error('handle_command returned None: %s %s', header, item)
+            logger.error("handle_command returned None: %s %s", header, item)
 
         if isinstance(response, protocol.AsynchronousResponse):
             response.requester = self
             await self._queue.async_put(response)
         elif isinstance(response, exceptions.RequestFailedError):
-            self.log.error('Error response: %r', response)
+            self.log.error("Error response: %r", response)
 
             err_cls = structs.get_struct_by_command(
                 response.request.command_id,
                 request=False,
             )
-            print('err_Cls', err_cls)
+            print("err_Cls", err_cls)
             err_response = err_cls(result=response.code)
-            await self.send_response(err_response,
-                                     request_header=header,
-                                     )
+            await self.send_response(
+                err_response,
+                request_header=header,
+            )
         else:
             await self.send_response(*response, request_header=header)
 
@@ -103,7 +102,7 @@ class AsyncioServerConnection:
         server = self.server
         while server.running:
             request = await self._queue.async_get()
-            self.log.debug('Handling %s', request)
+            self.log.debug("Handling %s", request)
 
             index_group = request.command.index_group
             if index_group == constants.AdsIndexGroup.SYM_HNDBYNAME:
@@ -123,7 +122,7 @@ class AsyncioServer:
         self,
         database: symbols.Database,
         port: int = constants.ADS_TCP_SERVER_PORT,
-        net_id: str = '127.0.0.1.1.1',  # TODO
+        net_id: str = "127.0.0.1.1.1",  # TODO
         hosts: list = None,
     ):
         self._port = port
@@ -147,8 +146,9 @@ class AsyncioServer:
         self._shutdown_event.clear()
         for host in self._hosts:
             await asyncio.start_server(
-                functools.partial(self._handle_new_client,
-                                  (host or '0.0.0.0', self._port)),
+                functools.partial(
+                    self._handle_new_client, (host or "0.0.0.0", self._port)
+                ),
                 host=host,
                 port=self._port,
             )
@@ -163,14 +163,12 @@ class AsyncioServer:
         await self._shutdown_event.wait()
 
     async def _handle_new_client(self, server_host, reader, writer):
-        client_addr = writer.transport.get_extra_info('peername')
+        client_addr = writer.transport.get_extra_info("peername")
         protocol_conn = self.server.add_connection(
             our_address=server_host,
             their_address=client_addr,
         )
-        connection = AsyncioServerConnection(
-            self, protocol_conn, reader, writer
-        )
+        connection = AsyncioServerConnection(self, protocol_conn, reader, writer)
         try:
             await connection._receive_loop()
         finally:
@@ -178,7 +176,8 @@ class AsyncioServer:
 
             # TODO: debug stuff:
             import os
-            if bool(os.environ.get('ADS_ASYNC_SINGLE_SHOT', 0)):
+
+            if bool(os.environ.get("ADS_ASYNC_SINGLE_SHOT", 0)):
                 await self.stop()
 
 
@@ -192,6 +191,7 @@ async def run_server_with_tmc(tmc_filename):
         Path to tmc file.
     """
     from ..symbols import TmcDatabase, dump_memory  # noqa
+
     database = TmcDatabase(tmc_filename)
     for data_area in database.data_areas:
         # for name, symbol in data_area.symbols.items():
@@ -205,14 +205,15 @@ async def run_server_with_tmc(tmc_filename):
     await server.serve_forever()
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     from .. import log
-    log.configure(level='DEBUG')
+
+    log.configure(level="DEBUG")
 
     try:
         tmc_filename = sys.argv[1]
     except IndexError:
         module_path = pathlib.Path(__file__).parent.parent
-        tmc_filename = module_path / 'tests' / 'kmono.tmc'
+        tmc_filename = module_path / "tests" / "kmono.tmc"
 
     asyncio.run(run_server_with_tmc(tmc_filename), debug=True)

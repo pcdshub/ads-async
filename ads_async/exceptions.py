@@ -12,18 +12,13 @@ class RequestFailedError(AdsAsyncException):
     code: AdsError
     reason: str
 
-    def __init__(
-        self,
-        reason: str,
-        code: 'AdsError',
-        request: 'T_AdsStructure'
-    ):
+    def __init__(self, reason: str, code: "AdsError", request: "T_AdsStructure"):
         super().__init__(reason)
         self.code = code
         self.request = request
 
     def __repr__(self):
-        return f'<ErrorResponse {self.code} ({self})>'
+        return f"<ErrorResponse {self.code} ({self})>"
 
 
 # class RequestFailedError(AdsAsyncException):

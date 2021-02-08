@@ -6,8 +6,15 @@ import typing
 from typing import Callable, Dict, Generator, Optional, Tuple, Union
 
 from . import constants, log, structs, utils
-from .constants import (AdsCommandId, AdsError, AdsIndexGroup,
-                        AdsTransmissionMode, AmsPort, AoEHeaderFlag, Role)
+from .constants import (
+    AdsCommandId,
+    AdsError,
+    AdsIndexGroup,
+    AdsTransmissionMode,
+    AmsPort,
+    AoEHeaderFlag,
+    Role,
+)
 from .exceptions import RequestFailedError
 from .structs import AmsNetId
 from .symbols import Database, Symbol
@@ -60,10 +67,11 @@ def from_wire(
         if header.length < _AOE_HEADER_LENGTH:
             # Not sure?
             logger.warning(
-                'Throwing away packet as header.length=%d < %d',
-                header.length, _AOE_HEADER_LENGTH
+                "Throwing away packet as header.length=%d < %d",
+                header.length,
+                _AOE_HEADER_LENGTH,
             )
-            buf = buf[header.length + _AMS_HEADER_LENGTH:]
+            buf = buf[header.length + _AMS_HEADER_LENGTH :]
             continue
 
         required_bytes = _AMS_HEADER_LENGTH + header.length
@@ -74,29 +82,29 @@ def from_wire(
         aoe_header = structs.AoEHeader.from_buffer(view)
 
         view = view[_AOE_HEADER_LENGTH:]
-        expected_size = (
-            _AMS_HEADER_LENGTH + _AOE_HEADER_LENGTH + aoe_header.length
-        )
+        expected_size = _AMS_HEADER_LENGTH + _AOE_HEADER_LENGTH + aoe_header.length
 
         buf = buf[required_bytes:]
 
         if expected_size != required_bytes:
             logger.warning(
-                'Throwing away packet as lengths do not add up: '
-                'AMS=%d AOE=%d payload=%d -> %d != AMS-header specified %d',
-                _AMS_HEADER_LENGTH, _AOE_HEADER_LENGTH, aoe_header.length,
-                expected_size, required_bytes
+                "Throwing away packet as lengths do not add up: "
+                "AMS=%d AOE=%d payload=%d -> %d != AMS-header specified %d",
+                _AMS_HEADER_LENGTH,
+                _AOE_HEADER_LENGTH,
+                aoe_header.length,
+                expected_size,
+                required_bytes,
             )
             item = None
         else:
             try:
                 cmd_cls = structs.get_struct_by_command(
-                    aoe_header.command_id,
-                    request=aoe_header.is_request
+                    aoe_header.command_id, request=aoe_header.is_request
                 )  # type: structs.T_AdsStructure
                 cmd = None
             except KeyError:
-                cmd = view[:aoe_header.length]
+                cmd = view[: aoe_header.length]
             else:
                 # if hasattr(cmd_cls, 'deserialize'):
                 # TODO: can't call super.from_buffer in a subclass
@@ -111,7 +119,7 @@ def from_wire(
 def response_to_wire(
     *items: structs.T_Serializable,
     request_header: structs.AoEHeader,
-    ads_error: AdsError = AdsError.NOERR
+    ads_error: AdsError = AdsError.NOERR,
 ) -> Tuple[list, bytearray]:
     """
     Prepare `items` to be sent over the wire.
@@ -141,13 +149,13 @@ def response_to_wire(
     headers = [
         structs.AmsTcpHeader(_AOE_HEADER_LENGTH + item_length),
         structs.AoEHeader.create_response(
-                target=request_header.source,
-                source=request_header.target,
-                command_id=request_header.command_id,
-                invoke_id=request_header.invoke_id,
-                length=item_length,
-                error_code=ads_error,
-            ),
+            target=request_header.source,
+            source=request_header.target,
+            command_id=request_header.command_id,
+            invoke_id=request_header.invoke_id,
+            length=item_length,
+            error_code=ads_error,
+        ),
     ]
 
     bytes_to_send = bytearray()
@@ -187,19 +195,19 @@ def request_to_wire(
     items_serialized = [structs.serialize(item) for item in items]
     item_length = sum(len(item) for item in items_serialized)
 
-    item, = items  # TODO
+    (item,) = items  # TODO
 
     headers = [
         structs.AmsTcpHeader(_AOE_HEADER_LENGTH + item_length),
         structs.AoEHeader.create_request(
-                target=target,
-                source=source,
-                command_id=item.command_id,
-                invoke_id=invoke_id,
-                length=item_length,
-                state_flags=state_flags,
-                error_code=error_code,
-            ),
+            target=target,
+            source=source,
+            command_id=item.command_id,
+            invoke_id=invoke_id,
+            length=item_length,
+            state_flags=state_flags,
+            error_code=error_code,
+        ),
     ]
 
     bytes_to_send = bytearray()
@@ -218,15 +226,17 @@ class Notification:
         self.symbol = symbol
 
 
-def _command_handler(cmd: constants.AdsCommandId,
-                     index_group: constants.AdsIndexGroup = None):
+def _command_handler(
+    cmd: constants.AdsCommandId, index_group: constants.AdsIndexGroup = None
+):
     """Decorator to indicate a handler method for the given command/group."""
 
     def wrapper(method):
-        if not hasattr(method, '_handle_commands'):
+        if not hasattr(method, "_handle_commands"):
             method._handles_commands = set()
         method._handles_commands.add((cmd, index_group))
         return method
+
     return wrapper
 
 
@@ -243,8 +253,10 @@ class AsynchronousResponse:
         self.requester = requester
 
     def __repr__(self):
-        return (f'<{self.__class__.__name__} invoke_id={self.invoke_id} '
-                f'command={self.command}>')
+        return (
+            f"<{self.__class__.__name__} invoke_id={self.invoke_id} "
+            f"command={self.command}>"
+        )
 
 
 class _Connection:
@@ -262,7 +274,8 @@ class _Connection:
     role : Role
 
     """
-    circuits: Dict[AmsNetId, '_Circuit']
+
+    circuits: Dict[AmsNetId, "_Circuit"]
     _our_address: IPPort
     _our_net_id: str
     their_address: IPPort
@@ -282,8 +295,8 @@ class _Connection:
         self.their_address = their_address
 
         self._log_tags = {
-            'role': str(role),
-            'their_address': their_address,
+            "role": str(role),
+            "their_address": their_address,
         }
         self.log = log.ComposableLogAdapter(module_logger, self._log_tags)
         self.our_net_id = our_net_id
@@ -296,10 +309,10 @@ class _Connection:
 
     @our_address.setter
     def our_address(self, our_address):
-        our_address = our_address or ('not_yet_set', 0)
+        our_address = our_address or ("not_yet_set", 0)
 
         self._our_address = tuple(our_address)
-        self._log_tags['our_address'] = self._our_address
+        self._log_tags["our_address"] = self._our_address
 
     @property
     def our_net_id(self) -> str:
@@ -308,9 +321,9 @@ class _Connection:
 
     @our_net_id.setter
     def our_net_id(self, our_net_id: str):
-        our_net_id = our_net_id or ('not_yet_set', 0)
+        our_net_id = our_net_id or ("not_yet_set", 0)
         self._our_net_id = str(our_net_id)
-        self._log_tags['our_net_id'] = self._our_net_id
+        self._log_tags["our_net_id"] = self._our_net_id
 
     def disconnected(self):
         """Disconnection callback."""
@@ -321,16 +334,17 @@ class _Connection:
         for consumed, item in from_wire(self.recv_buffer, logger=self.log):
             # header, *_ = item
             self.log.debug(
-                '%s', item,
+                "%s",
+                item,
                 extra=dict(
-                    direction='<-',
+                    direction="<-",
                     bytesize=consumed,
-                )
+                ),
             )
             self.recv_buffer = self.recv_buffer[consumed:]
             yield item
 
-    def get_circuit(self, net_id: Union[AmsNetId, str]) -> '_Circuit':
+    def get_circuit(self, net_id: Union[AmsNetId, str]) -> "_Circuit":
         """Get a circuit for (their) Net ID."""
         if isinstance(net_id, AmsNetId):
             net_id = repr(net_id)
@@ -350,6 +364,7 @@ class _Connection:
 
 class ClientConnection(_Connection):
     """One connection from the role/perspective of the client."""
+
     def __init__(
         self,
         our_address: IPPort,
@@ -361,17 +376,18 @@ class ClientConnection(_Connection):
             our_address=our_address,
             our_net_id=our_net_id,
             their_address=their_address,
-            role=Role.Client
+            role=Role.Client,
         )
 
 
 class ServerConnection(_Connection):
     """One connection from the role/perspective of the server."""
-    server: 'Server'
+
+    server: "Server"
 
     def __init__(
         self,
-        server: 'Server',
+        server: "Server",
         our_address: IPPort,
         our_net_id: str,
         their_address: IPPort,
@@ -382,7 +398,7 @@ class ServerConnection(_Connection):
             our_address=our_address,
             our_net_id=our_net_id,
             their_address=their_address,
-            role=Role.Server
+            role=Role.Server,
         )
 
 
@@ -404,13 +420,7 @@ class Server:
     database: Database
     log: log.ComposableLogAdapter
 
-    def __init__(
-        self,
-        database: Database,
-        net_id: str,
-        *,
-        name='AdsAsync'
-    ):
+    def __init__(self, database: Database, net_id: str, *, name="AdsAsync"):
         self._name = name
         self.database = database
         self.connections = {}
@@ -450,8 +460,7 @@ class Server:
         )
         self.connections[their_address] = connection
         self.log.info(
-            'New client connection (%d total): %s',
-            len(self.connections), connection
+            "New client connection (%d total): %s", len(self.connections), connection
         )
         return connection
 
@@ -466,8 +475,7 @@ class Server:
         """
         client = self.connections.pop(address)
         self.log.info(
-            'Removing client connection (%d total): %s',
-            len(self.connections), client
+            "Removing client connection (%d total): %s", len(self.connections), client
         )
 
     @property
@@ -510,6 +518,7 @@ class _Circuit:
     their_port : AmsPort
         Defaults to AmsPort.R0_PLC_TC3.
     """
+
     handle_to_notification: dict
     handle_to_symbol: dict
     log: log.ComposableLogAdapter
@@ -518,7 +527,7 @@ class _Circuit:
 
     def __init__(
         self,
-        connection: '_Connection',
+        connection: "_Connection",
         our_net_id: str,
         their_net_id: str,
         tags: Optional[dict] = None,
@@ -556,16 +565,14 @@ class _Circuit:
 
         cls._handlers = {}
         for attr, obj in inspect.getmembers(cls):
-            for handles in getattr(obj, '_handles_commands', []):
+            for handles in getattr(obj, "_handles_commands", []):
                 cls._handlers[handles] = getattr(cls, attr)
 
     def disconnected(self):
         """Disconnected callback."""
 
     def get_handler(
-        self,
-        header: structs.AoEHeader,
-        request: Optional[structs.T_AdsStructure]
+        self, header: structs.AoEHeader, request: Optional[structs.T_AdsStructure]
     ) -> list:
         """
         Top-level command dispatcher.
@@ -587,9 +594,11 @@ class _Circuit:
             List of commands or byte strings to be serialized.
         """
         command_id = header.command_id
-        if hasattr(command_id, 'index_group'):
-            keys = [(command_id, command_id.index_group),  # type: ignore
-                    (command_id, None)]
+        if hasattr(command_id, "index_group"):
+            keys = [
+                (command_id, command_id.index_group),  # type: ignore
+                (command_id, None),
+            ]
         else:
             keys = [(command_id, None)]
 
@@ -599,7 +608,7 @@ class _Circuit:
             except KeyError:
                 ...
 
-        raise MissingHandlerError(f'No handler defined for command {keys}')
+        raise MissingHandlerError(f"No handler defined for command {keys}")
 
     def response_to_wire(
         self,
@@ -628,22 +637,20 @@ class _Circuit:
         """
 
         items, bytes_to_send = response_to_wire(
-            *items,
-            request_header=request_header,
-            ads_error=ads_error
+            *items, request_header=request_header, ads_error=ads_error
         )
 
         if self.log.isEnabledFor(logging.DEBUG):
             extra = {
-                'direction': '->',
-                'sequence': request_header.invoke_id,
-                'bytesize': len(bytes_to_send),
-                'our_address': tuple(request_header.target),
-                'their_address': tuple(request_header.source),
+                "direction": "->",
+                "sequence": request_header.invoke_id,
+                "bytesize": len(bytes_to_send),
+                "our_address": tuple(request_header.target),
+                "their_address": tuple(request_header.source),
             }
             for idx, item in enumerate(items, 1):
-                extra['counter'] = (idx, len(items))
-                self.log.debug('%s', item, extra=extra)
+                extra["counter"] = (idx, len(items))
+                self.log.debug("%s", item, extra=extra)
 
         return bytes_to_send
 
@@ -681,35 +688,33 @@ class _Circuit:
         else:
             target_net_id, target_port = target
             target = structs.AmsAddr(
-                structs.AmsNetId.from_string(target_net_id),
-                target_port
+                structs.AmsNetId.from_string(target_net_id), target_port
             )
 
         invoke_id = self._invoke_counter()
         assert len(items) == 1  # TODO
 
-        item, = items
+        (item,) = items
         self.id_to_request[invoke_id] = item
 
         items, bytes_to_send = request_to_wire(
             *items,
             target=target,
             source=structs.AmsAddr(
-                structs.AmsNetId.from_string(self.our_net_id),
-                self.our_port
+                structs.AmsNetId.from_string(self.our_net_id), self.our_port
             ),
             invoke_id=invoke_id,
         )
 
         if self.log.isEnabledFor(logging.DEBUG):
             extra = {
-                'direction': '->',
-                'sequence': invoke_id,
-                'bytesize': len(bytes_to_send),
+                "direction": "->",
+                "sequence": invoke_id,
+                "bytesize": len(bytes_to_send),
             }
             for idx, item in enumerate(items, 1):
-                extra['counter'] = (idx, len(items))
-                self.log.debug('%s', item, extra=extra)
+                extra["counter"] = (idx, len(items))
+                self.log.debug("%s", item, extra=extra)
 
         return invoke_id, bytes_to_send
 
@@ -744,24 +749,26 @@ class ClientCircuit(_Circuit):
     ):
         self.unknown_notifications = set()
         tags = dict(tags or {})
-        tags.update({
-            'role': Role.Client,
-            'our_address': (our_net_id, 0),  # TODO
-            'their_address': (their_net_id, 0),
-        })
+        tags.update(
+            {
+                "role": Role.Client,
+                "our_address": (our_net_id, 0),  # TODO
+                "their_address": (their_net_id, 0),
+            }
+        )
         super().__init__(
             connection=connection,
             our_net_id=our_net_id,
             their_net_id=their_net_id,
             tags=tags,
             our_port=our_port,
-            their_port=their_port
+            their_port=their_port,
         )
 
     def __repr__(self):
         return (
-            f'<{self.__class__.__name__} our_net_id={self.our_net_id} '
-            f'their_net_id={self.their_net_id}>'
+            f"<{self.__class__.__name__} our_net_id={self.our_net_id} "
+            f"their_net_id={self.their_net_id}>"
         )
 
     def handle_command(
@@ -788,9 +795,9 @@ class ClientCircuit(_Circuit):
             List of commands or byte strings to be serialized.
         """
         self.log.debug(
-            'Handling %s',
+            "Handling %s",
             response,
-            extra={'sequence': header.invoke_id, 'direction': '<-'}
+            extra={"sequence": header.invoke_id, "direction": "<-"},
         )
 
         handler = self.get_handler(header, response)
@@ -804,8 +811,8 @@ class ClientCircuit(_Circuit):
         except KeyError as ex:
             raise RequestFailedError(
                 code=AdsError.CLIENT_INVALIDPARM,  # TODO?
-                reason=f'{ex} bad handle',
-                request=request
+                reason=f"{ex} bad handle",
+                request=request,
             ) from None
 
     @_command_handler(AdsCommandId.ADD_DEVICE_NOTIFICATION)
@@ -893,27 +900,25 @@ class ClientCircuit(_Circuit):
 
     @_command_handler(AdsCommandId.DEVICE_NOTIFICATION)
     def _device_notification(
-        self,
-        request,
-        header: structs.AoEHeader,
-        stream: structs.AdsNotificationStream
+        self, request, header: structs.AoEHeader, stream: structs.AdsNotificationStream
     ):
-        print('req', request, 'header', header, 'stream', stream)
+        print("req", request, "header", header, "stream", stream)
         for stamp in stream.stamps:
             timestamp = stamp.timestamp
             for sample in stamp.samples:
                 try:
-                    handler = self.handle_to_notification[
-                        sample.notification_handle]
+                    handler = self.handle_to_notification[sample.notification_handle]
                 except KeyError:
-                    self.log.debug('No handler for notification id %s %d?',
-                                   header.source, sample.notification_handle)
+                    self.log.debug(
+                        "No handler for notification id %s %d?",
+                        header.source,
+                        sample.notification_handle,
+                    )
                     self.unknown_notifications.add(
                         (tuple(header.source), sample.notification_handle)
                     )
                 else:
-                    handler.process(header=header, timestamp=timestamp,
-                                    sample=sample)
+                    handler.process(header=header, timestamp=timestamp, sample=sample)
 
     def add_notification_by_index(
         self,
@@ -967,9 +972,7 @@ class ClientCircuit(_Circuit):
         handle : int
             The notification handle.
         """
-        return structs.AdsDeleteDeviceNotificationRequest(
-            handle=handle
-        )
+        return structs.AdsDeleteDeviceNotificationRequest(handle=handle)
 
     def get_device_information(self):
         """
@@ -1071,7 +1074,7 @@ class ServerCircuit(_Circuit):
     _notification_counter: utils.ThreadsafeCounter
     _handlers: Dict[Tuple[AdsCommandId, Optional[AdsIndexGroup]], Callable]
     address: IPPort
-    server: 'Server'
+    server: "Server"
     server_host: IPPort
     connection: ServerConnection
 
@@ -1085,31 +1088,31 @@ class ServerCircuit(_Circuit):
         their_port: AmsPort = AmsPort.R0_PLC_TC3,
     ):
         tags = dict(tags or {})
-        tags.update({
-            'role': Role.Server,
-            'our_address': (our_net_id, 0),  # TODO
-            'their_address': (their_net_id, 0),
-        })
+        tags.update(
+            {
+                "role": Role.Server,
+                "our_address": (our_net_id, 0),  # TODO
+                "their_address": (their_net_id, 0),
+            }
+        )
         super().__init__(
             connection=connection,
             our_net_id=our_net_id,
             their_net_id=their_net_id,
             tags=tags,
             our_port=our_port,
-            their_port=their_port
+            their_port=their_port,
         )
         self.server = connection.server
 
     def __repr__(self):
         return (
-            f'<{self.__class__.__name__} address={self.address} '
-            f'server_host={self.server_host}>'
+            f"<{self.__class__.__name__} address={self.address} "
+            f"server_host={self.server_host}>"
         )
 
     def handle_command(
-        self,
-        header: structs.AoEHeader,
-        request: Optional[structs.T_AdsStructure]
+        self, header: structs.AoEHeader, request: Optional[structs.T_AdsStructure]
     ) -> list:
         """
         Top-level command dispatcher.
@@ -1131,11 +1134,7 @@ class ServerCircuit(_Circuit):
             List of commands or byte strings to be serialized.
         """
         command = header.command_id
-        self.log.debug(
-            'Handling %s',
-            command,
-            extra={'sequence': header.invoke_id}
-        )
+        self.log.debug("Handling %s", command, extra={"sequence": header.invoke_id})
 
         handler = self.get_handler(header, command)
         return handler(self, header, request)
@@ -1148,7 +1147,7 @@ class ServerCircuit(_Circuit):
         except KeyError:
             raise RequestFailedError(
                 code=AdsError.DEVICE_SYMBOLNOTFOUND,
-                reason=f'{symbol_name!r} not in database',
+                reason=f"{symbol_name!r} not in database",
                 request=request,
             ) from None
 
@@ -1159,8 +1158,8 @@ class ServerCircuit(_Circuit):
         except KeyError as ex:
             raise RequestFailedError(
                 code=AdsError.CLIENT_INVALIDPARM,  # TODO?
-                reason=f'{ex} bad handle',
-                request=request
+                reason=f"{ex} bad handle",
+                request=request,
             ) from None
 
     @_command_handler(AdsCommandId.ADD_DEVICE_NOTIFICATION)
@@ -1180,27 +1179,30 @@ class ServerCircuit(_Circuit):
 
     @_command_handler(AdsCommandId.DEL_DEVICE_NOTIFICATION)
     def _delete_notification(
-            self, header: structs.AoEHeader,
-            request: structs.AdsDeleteDeviceNotificationRequest):
+        self,
+        header: structs.AoEHeader,
+        request: structs.AdsDeleteDeviceNotificationRequest,
+    ):
         self.handle_to_notification.pop(request.handle)
         return [structs.AoEResponseHeader(AdsError.NOERR)]
 
     @_command_handler(AdsCommandId.WRITE_CONTROL)
-    def _write_control(self, header: structs.AoEHeader,
-                       request: structs.AdsWriteControlRequest):
-        raise NotImplementedError('write_control')
+    def _write_control(
+        self, header: structs.AoEHeader, request: structs.AdsWriteControlRequest
+    ):
+        raise NotImplementedError("write_control")
 
     @_command_handler(AdsCommandId.WRITE, AdsIndexGroup.SYM_RELEASEHND)
-    def _write_release_handle(self, header: structs.AoEHeader,
-                              request: structs.AdsWriteRequest):
+    def _write_release_handle(
+        self, header: structs.AoEHeader, request: structs.AdsWriteRequest
+    ):
         handle = request.handle
         self.handle_to_symbol.pop(handle, None)
         return [structs.AoEResponseHeader()]
 
     @_command_handler(AdsCommandId.WRITE, AdsIndexGroup.SYM_VALBYHND)
     @_command_handler(AdsCommandId.WRITE, AdsIndexGroup.SYM_VALBYNAME)
-    def _write_value(self, header: structs.AoEHeader,
-                     request: structs.AdsWriteRequest):
+    def _write_value(self, header: structs.AoEHeader, request: structs.AdsWriteRequest):
         if request.index_group == AdsIndexGroup.SYM_VALBYHND:
             symbol = self._get_symbol_by_request_handle(request)
         else:
@@ -1208,14 +1210,17 @@ class ServerCircuit(_Circuit):
 
         old_value = repr(symbol.value)
         symbol.write(request.data)
-        self.log.debug('Writing symbol %s old value: %s new value: %s',
-                       symbol, old_value, symbol.value)
+        self.log.debug(
+            "Writing symbol %s old value: %s new value: %s",
+            symbol,
+            old_value,
+            symbol.value,
+        )
         return [structs.AoEResponseHeader()]
 
     @_command_handler(AdsCommandId.READ, AdsIndexGroup.SYM_VALBYHND)
     @_command_handler(AdsCommandId.READ, AdsIndexGroup.SYM_VALBYNAME)
-    def _read_value(self, header: structs.AoEHeader,
-                    request: structs.AdsReadRequest):
+    def _read_value(self, header: structs.AoEHeader, request: structs.AdsReadRequest):
         if request.index_group == AdsIndexGroup.SYM_VALBYHND:
             symbol = self._get_symbol_by_request_handle(request)
         else:
@@ -1224,14 +1229,15 @@ class ServerCircuit(_Circuit):
         return [structs.AoEReadResponse(data=symbol.read())]
 
     @_command_handler(AdsCommandId.READ)
-    def _read_catchall(self, header: structs.AoEHeader,
-                       request: structs.AdsReadRequest):
+    def _read_catchall(
+        self, header: structs.AoEHeader, request: structs.AdsReadRequest
+    ):
         try:
             data_area = self.server.database.index_groups[request.index_group]
         except KeyError:
             raise RequestFailedError(
                 code=AdsError.DEVICE_INVALIDACCESS,  # TODO?
-                reason=f'Invalid index group: {request.index_group}',
+                reason=f"Invalid index group: {request.index_group}",
                 request=request,
             ) from None
         else:
@@ -1239,18 +1245,18 @@ class ServerCircuit(_Circuit):
             return [structs.AoEReadResponse(data=data)]
 
     @_command_handler(AdsCommandId.READ_WRITE, AdsIndexGroup.SYM_HNDBYNAME)
-    def _read_write_handle(self, header: structs.AoEHeader,
-                           request: structs.AdsReadWriteRequest):
+    def _read_write_handle(
+        self, header: structs.AoEHeader, request: structs.AdsReadWriteRequest
+    ):
         symbol = self._get_symbol_by_request_name(request)
         handle = self._handle_counter()
         self.handle_to_symbol[handle] = symbol
-        return [
-            structs.AoEHandleResponse(result=AdsError.NOERR, handle=handle)
-        ]
+        return [structs.AoEHandleResponse(result=AdsError.NOERR, handle=handle)]
 
     @_command_handler(AdsCommandId.READ_WRITE, AdsIndexGroup.SYM_INFOBYNAMEEX)
-    def _read_write_info(self, header: structs.AoEHeader,
-                         request: structs.AdsReadWriteRequest):
+    def _read_write_info(
+        self, header: structs.AoEHeader, request: structs.AdsReadWriteRequest
+    ):
         symbol = self._get_symbol_by_request_name(request)
         index_group = symbol.data_area.index_group.value  # TODO
         symbol_entry = structs.AdsSymbolEntry(
@@ -1261,16 +1267,17 @@ class ServerCircuit(_Circuit):
             flags=constants.AdsSymbolFlag(0),  # TODO symbol.flags
             name=symbol.name,
             type_name=symbol.data_type_name,
-            comment=symbol.__doc__ or '',
+            comment=symbol.__doc__ or "",
         )
         return [structs.AoEReadResponse(data=symbol_entry)]
 
     @_command_handler(AdsCommandId.READ_WRITE, AdsIndexGroup.SUMUP_READ)
-    def _read_write_sumup_read(self, header: structs.AoEHeader,
-                               request: structs.AdsReadWriteRequest):
+    def _read_write_sumup_read(
+        self, header: structs.AoEHeader, request: structs.AdsReadWriteRequest
+    ):
         read_size = ctypes.sizeof(structs.AdsReadRequest)
         count = len(request.data) // read_size
-        self.log.debug('Request to read %d items', count)
+        self.log.debug("Request to read %d items", count)
         buf = bytearray(request.data)
 
         results = []
@@ -1283,7 +1290,7 @@ class ServerCircuit(_Circuit):
         for idx in range(count):
             read_req = structs.AdsReadRequest.from_buffer(buf)
             read_response = self.handle_command(read_header, read_req)
-            self.log.debug('[%d] %s -> %s', idx + 1, read_req, read_response)
+            self.log.debug("[%d] %s -> %s", idx + 1, read_req, read_response)
             if read_response is not None:
                 results.append(read_response[0].result)
                 data.append(read_response[0].data)
@@ -1298,27 +1305,28 @@ class ServerCircuit(_Circuit):
         else:
             to_send = data
 
-        return [structs.AoEReadResponse(
-            data=b''.join(structs.serialize(res) for res in to_send)
-        )]
+        return [
+            structs.AoEReadResponse(
+                data=b"".join(structs.serialize(res) for res in to_send)
+            )
+        ]
 
     @_command_handler(AdsCommandId.READ_WRITE)
-    def _read_write_catchall(self, header: structs.AoEHeader,
-                             request: structs.AdsReadWriteRequest):
+    def _read_write_catchall(
+        self, header: structs.AoEHeader, request: structs.AdsReadWriteRequest
+    ):
         ...
 
     @_command_handler(AdsCommandId.READ_DEVICE_INFO)
     def _read_device_info(self, header: structs.AoEHeader, request):
         return [
             structs.AoEResponseHeader(AdsError.NOERR),
-            structs.AdsDeviceInfo(*self.server.version, name=self.server.name)
+            structs.AdsDeviceInfo(*self.server.version, name=self.server.name),
         ]
 
     @_command_handler(AdsCommandId.READ_STATE)
     def _read_state(self, header: structs.AoEHeader, request):
         return [
             structs.AoEResponseHeader(AdsError.NOERR),
-            structs.AdsReadStateResponse(self.server.ads_state,
-                                         0  # TODO: find docs
-                                         )
+            structs.AdsReadStateResponse(self.server.ads_state, 0),  # TODO: find docs
         ]
