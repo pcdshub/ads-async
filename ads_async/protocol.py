@@ -46,7 +46,7 @@ def from_wire(
     header: structs.AoEHeader
         The header associated with `item`.
 
-    item: structs._AdsStructBase or memoryview
+    item: structs.T_AdsStructure or memoryview
         Deserialized to the correct structure, if recognized. If not,
         a memoryview to inside the buffer.
     """
@@ -93,7 +93,7 @@ def from_wire(
                 cmd_cls = structs.get_struct_by_command(
                     aoe_header.command_id,
                     request=aoe_header.is_request
-                )  # type: structs._AdsStructBase
+                )  # type: structs.T_AdsStructure
                 cmd = None
             except KeyError:
                 cmd = view[:aoe_header.length]
@@ -118,7 +118,7 @@ def response_to_wire(
 
     Parameters
     -------
-    *items : structs._AdsStructBase or bytes
+    *items : structs.T_AdsStructure or bytes
         Individual structures or pre-serialized data to send.
 
     request_header : structs.AoEHeader
@@ -170,7 +170,7 @@ def request_to_wire(
 
     Parameters
     -------
-    *items : structs._AdsStructBase or bytes
+    *items : structs.T_AdsStructure or bytes
         Individual structures or pre-serialized data to send.
 
     ads_error : AdsError
@@ -232,7 +232,7 @@ def _command_handler(cmd: constants.AdsCommandId,
 
 class AsynchronousResponse:
     header: structs.AoEHeader
-    command: structs._AdsStructBase
+    command: structs.T_AdsStructure
     invoke_id: int
     requester: object
 
@@ -263,7 +263,8 @@ class _Connection:
 
     """
     circuits: Dict[AmsNetId, '_Circuit']
-    our_address: IPPort
+    _our_address: IPPort
+    _our_net_id: str
     their_address: IPPort
     role: Role
     recv_buffer: bytearray
@@ -271,23 +272,45 @@ class _Connection:
 
     def __init__(
         self,
-        our_address: IPPort,
-        our_net_id: str,
         their_address: IPPort,
         role: constants.Role,
+        our_address: Optional[IPPort] = None,
+        our_net_id: Optional[str] = None,
     ):
         self.recv_buffer = bytearray()
         self.circuits = {}
-        self.our_net_id = our_net_id
-        self.our_address = our_address
         self.their_address = their_address
 
         self._log_tags = {
             'role': str(role),
-            'our_address': our_address,
             'their_address': their_address,
         }
         self.log = log.ComposableLogAdapter(module_logger, self._log_tags)
+        self.our_net_id = our_net_id
+        self.our_address = our_address
+
+    @property
+    def our_address(self) -> IPPort:
+        """Our address (IP and port of our socket)."""
+        return self._our_address
+
+    @our_address.setter
+    def our_address(self, our_address):
+        our_address = our_address or ('not_yet_set', 0)
+
+        self._our_address = tuple(our_address)
+        self._log_tags['our_address'] = self._our_address
+
+    @property
+    def our_net_id(self) -> str:
+        """Our Net ID."""
+        return self._our_net_id
+
+    @our_net_id.setter
+    def our_net_id(self, our_net_id: str):
+        our_net_id = our_net_id or ('not_yet_set', 0)
+        self._our_net_id = str(our_net_id)
+        self._log_tags['our_net_id'] = self._our_net_id
 
     def disconnected(self):
         """Disconnection callback."""
@@ -539,10 +562,10 @@ class _Circuit:
     def disconnected(self):
         """Disconnected callback."""
 
-    def handle_command(
+    def get_handler(
         self,
         header: structs.AoEHeader,
-        request: Optional[structs._AdsStructBase]
+        request: Optional[structs.T_AdsStructure]
     ) -> list:
         """
         Top-level command dispatcher.
@@ -552,10 +575,10 @@ class _Circuit:
         Parameters
         ----------
         header : structs.AoEHeader
-            The request header.
+            The header.
 
-        request : structs._AdsStructBase or None
-            The request itself.  May be optional depending on the header's
+        command : structs.T_AdsStructure or None
+            The command itself.  May be optional depending on the header's
             AdsCommandId.
 
         Returns
@@ -563,26 +586,18 @@ class _Circuit:
         response : list
             List of commands or byte strings to be serialized.
         """
-        command = header.command_id
-        self.log.debug(
-            'Handling %s',
-            command,
-            extra={'sequence': header.invoke_id}
-        )
-
-        if hasattr(request, 'index_group'):
-            keys = [(command, request.index_group),  # type: ignore
-                    (command, None)]
+        command_id = header.command_id
+        if hasattr(command_id, 'index_group'):
+            keys = [(command_id, command_id.index_group),  # type: ignore
+                    (command_id, None)]
         else:
-            keys = [(command, None)]
+            keys = [(command_id, None)]
 
         for key in keys:
             try:
-                handler = self._handlers[key]
+                return self._handlers[key]
             except KeyError:
                 ...
-            else:
-                return handler(self, header, request)
 
         raise MissingHandlerError(f'No handler defined for command {keys}')
 
@@ -597,7 +612,7 @@ class _Circuit:
 
         Parameters
         -------
-        *items : structs._AdsStructBase or bytes
+        *items : structs.T_AdsStructure or bytes
             Individual structures or pre-serialized data to send.
 
         request_header : structs.AoEHeader
@@ -643,7 +658,7 @@ class _Circuit:
 
         Parameters
         -------
-        *items : structs._AdsStructBase or bytes
+        *items : structs.T_AdsStructure or bytes
             Individual structures or pre-serialized data to send.
 
         request_header : structs.AoEHeader
@@ -680,7 +695,7 @@ class _Circuit:
             *items,
             target=target,
             source=structs.AmsAddr(
-                structs.AmsNetId.from_string(self.client_net_id),
+                structs.AmsNetId.from_string(self.our_net_id),
                 self.our_port
             ),
             invoke_id=invoke_id,
@@ -727,6 +742,7 @@ class ClientCircuit(_Circuit):
         our_port: AmsPort = AmsPort.R0_PLC_TC3,
         their_port: AmsPort = AmsPort.R0_PLC_TC3,
     ):
+        self.unknown_notifications = set()
         tags = dict(tags or {})
         tags.update({
             'role': Role.Client,
@@ -744,9 +760,42 @@ class ClientCircuit(_Circuit):
 
     def __repr__(self):
         return (
-            f'<{self.__class__.__name__} address={self.address} '
-            f'server_host={self.server_host}>'
+            f'<{self.__class__.__name__} our_net_id={self.our_net_id} '
+            f'their_net_id={self.their_net_id}>'
         )
+
+    def handle_command(
+        self,
+        header: structs.AoEHeader,
+        response: structs.T_AdsStructure,
+    ) -> list:
+        """
+        Top-level command dispatcher.
+
+        First stop to determine which method will handle the given command.
+
+        Parameters
+        ----------
+        header : structs.AoEHeader
+            The request header.
+
+        response : structs.T_AdsStructure
+            The server response.
+
+        Returns
+        -------
+        response : list
+            List of commands or byte strings to be serialized.
+        """
+        self.log.debug(
+            'Handling %s',
+            response,
+            extra={'sequence': header.invoke_id}
+        )
+
+        handler = self.get_handler(header, response)
+        request = self.id_to_request.pop(header.invoke_id, None)
+        return handler(self, request, header, response)
 
     def _get_symbol_by_request_name(self, request) -> Symbol:
         """Get symbol by a request with a name as its payload."""
@@ -861,6 +910,7 @@ class ClientCircuit(_Circuit):
         header: structs.AoEHeader,
         stream: structs.AdsNotificationStream
     ):
+        print('req', request, 'header', header, 'stream', stream)
         for stamp in stream.stamps:
             timestamp = stamp.timestamp
             for sample in stamp.samples:
@@ -1068,6 +1118,40 @@ class ServerCircuit(_Circuit):
             f'server_host={self.server_host}>'
         )
 
+    def handle_command(
+        self,
+        header: structs.AoEHeader,
+        request: Optional[structs.T_AdsStructure]
+    ) -> list:
+        """
+        Top-level command dispatcher.
+
+        First stop to determine which method will handle the given command.
+
+        Parameters
+        ----------
+        header : structs.AoEHeader
+            The request header.
+
+        request : structs.T_AdsStructure or None
+            The request itself.  May be optional depending on the header's
+            AdsCommandId.
+
+        Returns
+        -------
+        response : list
+            List of commands or byte strings to be serialized.
+        """
+        command = header.command_id
+        self.log.debug(
+            'Handling %s',
+            command,
+            extra={'sequence': header.invoke_id}
+        )
+
+        handler = self.get_handler(header, command)
+        return handler(self, header, request)
+
     def _get_symbol_by_request_name(self, request) -> Symbol:
         """Get symbol by a request with a name as its payload."""
         symbol_name = structs.byte_string_to_string(request.data)
@@ -1092,8 +1176,11 @@ class ServerCircuit(_Circuit):
             ) from None
 
     @_command_handler(AdsCommandId.ADD_DEVICE_NOTIFICATION)
-    def _add_notification(self, header: structs.AoEHeader,
-                          request: structs.AdsAddDeviceNotificationRequest):
+    def _add_notification(
+        self,
+        header: structs.AoEHeader,
+        request: structs.AdsAddDeviceNotificationRequest,
+    ):
         if request.index_group == AdsIndexGroup.SYM_VALBYHND:
             symbol = self._get_symbol_by_request_handle(request)
             handle = self._handle_counter()
