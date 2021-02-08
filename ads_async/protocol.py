@@ -571,8 +571,14 @@ class _Circuit:
     def disconnected(self):
         """Disconnected callback."""
 
+    def __repr__(self):
+        return (
+            f"<{self.__class__.__name__} our_net_id={self.our_net_id} "
+            f"their_net_id={self.their_net_id}>"
+        )
+
     def get_handler(
-        self, header: structs.AoEHeader, request: Optional[structs.T_AdsStructure]
+        self, header: structs.AoEHeader, command: Optional[structs.T_AdsStructure]
     ) -> list:
         """
         Top-level command dispatcher.
@@ -593,14 +599,13 @@ class _Circuit:
         response : list
             List of commands or byte strings to be serialized.
         """
-        command_id = header.command_id
-        if hasattr(command_id, "index_group"):
+        if hasattr(command, "index_group"):
             keys = [
-                (command_id, command_id.index_group),  # type: ignore
-                (command_id, None),
+                (header.command_id, command.index_group),  # type: ignore
+                (header.command_id, None),
             ]
         else:
-            keys = [(command_id, None)]
+            keys = [(header.command_id, None)]
 
         for key in keys:
             try:
@@ -763,12 +768,6 @@ class ClientCircuit(_Circuit):
             tags=tags,
             our_port=our_port,
             their_port=their_port,
-        )
-
-    def __repr__(self):
-        return (
-            f"<{self.__class__.__name__} our_net_id={self.our_net_id} "
-            f"their_net_id={self.their_net_id}>"
         )
 
     def handle_command(
@@ -1105,12 +1104,6 @@ class ServerCircuit(_Circuit):
         )
         self.server = connection.server
 
-    def __repr__(self):
-        return (
-            f"<{self.__class__.__name__} address={self.address} "
-            f"server_host={self.server_host}>"
-        )
-
     def handle_command(
         self, header: structs.AoEHeader, request: Optional[structs.T_AdsStructure]
     ) -> list:
@@ -1133,10 +1126,11 @@ class ServerCircuit(_Circuit):
         response : list
             List of commands or byte strings to be serialized.
         """
-        command = header.command_id
-        self.log.debug("Handling %s", command, extra={"sequence": header.invoke_id})
+        self.log.debug(
+            "Handling %s", header.command_id, extra={"sequence": header.invoke_id}
+        )
 
-        handler = self.get_handler(header, command)
+        handler = self.get_handler(header, request)
         return handler(self, header, request)
 
     def _get_symbol_by_request_name(self, request) -> Symbol:
