@@ -267,21 +267,38 @@ class _Connection:
 
     Parameters
     ----------
-    our_address: tuple of (addr, port)
-
     their_address: tuple of (addr, port)
+        The other side's address.
 
     role : Role
+        The role of the connection.
 
+    our_address : tuple of (addr, port), optional
+        May be set later based once a connection is established.
+
+    our_net_id : str, optional
+        May be set later based on IP address once a connection is established.
+
+    Attributes
+    ----------
+    circuits : str
+        Dictionary of Net ID string to circuit.
+
+    recv_buffer : bytearray
+        The receive buffer for the TCP connection.
+
+    circuit_class : type
+        The class to create circuits with - as this differs on server/client
+        instances.
     """
 
-    circuits: Dict[AmsNetId, "_Circuit"]
     _our_address: IPPort
     _our_net_id: str
-    their_address: IPPort
-    role: Role
-    recv_buffer: bytearray
     circuit_class: type
+    circuits: Dict[str, "_Circuit"]
+    recv_buffer: bytearray
+    role: Role
+    their_address: IPPort
 
     def __init__(
         self,
@@ -363,7 +380,20 @@ class _Connection:
 
 
 class ClientConnection(_Connection):
-    """One connection from the role/perspective of the client."""
+    """
+    One connection from the role/perspective of the client.
+
+    Parameters
+    ----------
+    our_address : (host, port)
+        The host and local port of client socket.
+
+    our_net_id : str
+        The AMS Net ID of the client.
+
+    their_address : (host, port)
+        The server address.
+    """
 
     def __init__(
         self,
@@ -381,7 +411,28 @@ class ClientConnection(_Connection):
 
 
 class ServerConnection(_Connection):
-    """One connection from the role/perspective of the server."""
+    """
+    One connection from the role/perspective of the server.
+
+    Parameters
+    ----------
+    server : Server
+        The server instance.
+
+    our_address : (host, port)
+        The server socket address.
+
+    our_net_id : str
+        The AMS Net ID of the server.
+
+    their_address : (host, port)
+        The client socket address.
+
+    Attributes
+    ----------
+    server : Server
+        The server instance.
+    """
 
     server: "Server"
 

@@ -295,9 +295,30 @@ class Symbol:
 
 
 class AsyncioCircuit:
-    """"""
+    """
+    A Circuit represents a "source net id" to "target net id" connection.
+
+    This is a 'client' circuit for the asyncio client implementation.
+
+    Parameters
+    ----------
+    connection : AsyncioClient
+        The asyncio client connection.
+
+    net_id : str
+        The AMS Net ID of the target.
+
+    default_port : AmsPort, optional
+        The default port to use in communciation (R0_PLC_TC3 port).
+    """
 
     circuit: protocol.ClientCircuit
+    _response_handlers: typing.DefaultDict[int, list]
+    _symbols: dict
+    connection: "AsyncioClient"
+    default_port: AmsPort
+    log: log.ComposableLogAdapter
+    net_id: str
 
     def __init__(
         self,
@@ -305,13 +326,13 @@ class AsyncioCircuit:
         net_id: str,
         default_port=AmsPort.R0_PLC_TC3,
     ):
-        self.connection = connection
-        self.circuit = connection.connection.get_circuit(net_id)
+        self._response_handlers = collections.defaultdict(list)
         self._symbols = {}
-        self.net_id = net_id
+        self.circuit = connection.connection.get_circuit(net_id)
+        self.connection = connection
         self.default_port = default_port
         self.log = connection.log  # TODO: adjust extras
-        self._response_handlers = collections.defaultdict(list)
+        self.net_id = net_id
 
     async def close(self):
         """Close the circuit and clean up."""
