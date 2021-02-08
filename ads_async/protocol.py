@@ -790,24 +790,12 @@ class ClientCircuit(_Circuit):
         self.log.debug(
             'Handling %s',
             response,
-            extra={'sequence': header.invoke_id}
+            extra={'sequence': header.invoke_id, 'direction': '<-'}
         )
 
         handler = self.get_handler(header, response)
         request = self.id_to_request.pop(header.invoke_id, None)
         return handler(self, request, header, response)
-
-    def _get_symbol_by_request_name(self, request) -> Symbol:
-        """Get symbol by a request with a name as its payload."""
-        symbol_name = structs.byte_string_to_string(request.data)
-        try:
-            return self.server.database.get_symbol_by_name(symbol_name)
-        except KeyError:
-            raise RequestFailedError(
-                code=AdsError.DEVICE_SYMBOLNOTFOUND,
-                reason=f'{symbol_name!r} not in database',
-                request=request,
-            ) from None
 
     def _get_symbol_by_request_handle(self, request) -> Symbol:
         """Get symbol by a request with a handle as its payload."""

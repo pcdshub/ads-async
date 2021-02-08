@@ -2,6 +2,7 @@ import asyncio
 import collections
 import contextvars
 import ctypes
+import ipaddress
 import typing
 from typing import Optional
 
@@ -738,8 +739,14 @@ class AsyncioClient:  # TODO -> Connection?
     async def _connected_loop(self):
         self.log.debug('Connected')
 
+        our_ip, our_port, *_ = self.writer.get_extra_info('sockname')
+
+        addr = ipaddress.ip_address(our_ip)
+        if isinstance(addr, ipaddress.IPv6Address):
+            our_ip = f'[{our_ip}]'
+
+        self.connection.our_address = (our_ip, our_port)
         if self.connection.our_net_id is None:
-            our_ip, *_ = self.writer.get_extra_info('socket')
             self.connection.our_net_id = f'{our_ip}.1.1'
             self.log.debug('Auto-configuring local net ID: %s',
                            self.connection.our_net_id)
