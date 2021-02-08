@@ -44,8 +44,7 @@ class PlcMemory:
     def read_bits(self, offset, bit_offset, bit_size) -> bytes:
         # byte_size = math.ceil(bit_size / 8)
         assert bit_size <= 8
-        value = self.memory[offset : offset + 1]
-        return (value >> bit_offset) & ((2 ** bit_size) - 1)
+        return (self.memory[offset] >> bit_offset) & ((2 ** bit_size) - 1)
 
     def write_bits(self, offset, bit_offset, bit_size, data):
         # Not thread-safe
@@ -127,9 +126,10 @@ class Symbol:
             raw = self.memory.read_bits(
                 self.offset, self.bit_offset.offset, self.bit_offset.size
             )
-        else:
-            offset = self.offset if not self.pointer else self._dereference_pointer()
-            raw = self.memory.read(offset, self.byte_size)
+            return self.ctypes_data_type(raw)
+
+        offset = self.offset if not self.pointer else self._dereference_pointer()
+        raw = self.memory.read(offset, self.byte_size)
         return self.ctypes_data_type.from_buffer(raw)
 
     def write(self, value):
@@ -175,7 +175,13 @@ class Symbol:
         return (offset, offset + self.byte_size)
 
     def __repr__(self):
-        mem_start, mem_end = self.memory_range
+        try:
+            mem_start, mem_end = self.memory_range
+        except NullPointerDereferencedError:
+            return (
+                f"<{self.__class__.__name__} {self.name!r} " f"value=... NULL_POINTER>"
+            )
+
         pointer = " pointer" if self.pointer else ""
         return (
             f"<{self.__class__.__name__} {self.name!r} "
