@@ -296,11 +296,12 @@ class _Connection:
         """Hook for new data received over the socket."""
         self.recv_buffer += data
         for consumed, item in from_wire(self.recv_buffer, logger=self.log):
+            # header, *_ = item
             self.log.debug(
                 '%s', item,
                 extra=dict(
                     direction='<-',
-                    bytesize=consumed
+                    bytesize=consumed,
                 )
             )
             self.recv_buffer = self.recv_buffer[consumed:]

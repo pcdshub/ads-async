@@ -1,6 +1,8 @@
 import asyncio
 import functools
 import logging
+import pathlib
+import sys
 
 from .. import constants, exceptions, log, protocol, structs, symbols
 from . import utils
@@ -180,27 +182,37 @@ class AsyncioServer:
                 await self.stop()
 
 
+async def run_server_with_tmc(tmc_filename):
+    """
+    Spawn a server using a .tmc file for symbol information.
+
+    Parameters
+    ----------
+    tmc_filename : str or pathlib.Path
+        Path to tmc file.
+    """
+    from ..symbols import TmcDatabase, dump_memory  # noqa
+    database = TmcDatabase(tmc_filename)
+    for data_area in database.data_areas:
+        # for name, symbol in data_area.symbols.items():
+        #   print(name, symbol)
+        print()
+        print(data_area.area_type)
+        # dump_memory(data_area.memory, data_area.symbols.values())
+
+    server = AsyncioServer(database)
+    await server.start()
+    await server.serve_forever()
+
+
 if __name__ == '__main__':
-    server = None
-
-    async def test():
-        global server
-        from ..symbols import TmcDatabase, dump_memory  # noqa
-        import pathlib
-        module_path = pathlib.Path(__file__).parent.parent
-        database = TmcDatabase(module_path / 'tests' / 'kmono.tmc')
-        for data_area in database.data_areas:
-            # for name, symbol in data_area.symbols.items():
-            #   print(name, symbol)
-            print()
-            print(data_area.area_type)
-            # dump_memory(data_area.memory, data_area.symbols.values())
-
-        server = AsyncioServer(database)
-        await server.start()
-        await server.serve_forever()
-
     from .. import log
     log.configure(level='DEBUG')
 
-    asyncio.run(test(), debug=True)
+    try:
+        tmc_filename = sys.argv[1]
+    except IndexError:
+        module_path = pathlib.Path(__file__).parent.parent
+        tmc_filename = module_path / 'tests' / 'kmono.tmc'
+
+    asyncio.run(run_server_with_tmc(tmc_filename), debug=True)
