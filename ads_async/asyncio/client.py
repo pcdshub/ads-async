@@ -5,15 +5,11 @@ import ctypes
 import typing
 from typing import Optional, Tuple
 
-from .. import constants, log, protocol, structs
+from .. import constants, exceptions, log, protocol, structs
 from ..constants import AdsTransmissionMode, AmsPort
 from . import utils
 
 _target_address = contextvars.ContextVar('_target_address', default=None)
-
-
-class FailureResponse(Exception):
-    ...
 
 
 class Notification(utils.CallbackHandler):
@@ -477,7 +473,7 @@ class AsyncioClient:
         # if isinstance(response, protocol.AsynchronousResponse):
         #     response.requester = self
         #     await self._queue.async_put(response)
-        # elif isinstance(response, protocol.ErrorResponse):
+        # elif isinstance(response, exceptions.RequestFailedError):
         #     self.log.error('Error response: %r', response)
 
         #     err_cls = structs.get_struct_by_command(
@@ -624,7 +620,11 @@ class AsyncioClient:
             await req.wait()
         result = getattr(req, 'result', None)
         if result is not None and result != constants.AdsError.NOERR:
-            raise FailureResponse(f'Request {item} failed with {result}')
+            raise exceptions.RequestFailedError(
+                f'Request {item} failed with {result}',
+                code=result,
+                request=req,
+            )
         return req.response
 
     async def get_device_information(self) -> structs.AdsDeviceInfo:

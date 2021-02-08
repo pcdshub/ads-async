@@ -3,11 +3,12 @@ import ctypes
 import inspect
 import logging
 import typing
-from typing import Callable, Dict, Generator, Optional, Tuple
+from typing import Callable, Dict, Generator, Optional, Tuple, Union
 
 from . import constants, log, structs, utils
 from .constants import (AdsCommandId, AdsError, AdsIndexGroup,
                         AdsTransmissionMode, AmsPort, AoEHeaderFlag, Role)
+from .exceptions import RequestFailedError
 from .structs import AmsNetId
 from .symbols import Database, Symbol
 
@@ -229,20 +230,6 @@ def _command_handler(cmd: constants.AdsCommandId,
     return wrapper
 
 
-class ErrorResponse(Exception):
-    code: AdsError
-    reason: str
-
-    def __init__(self, reason: str, code: AdsError,
-                 request: structs._AdsStructBase):
-        super().__init__(reason)
-        self.code = code
-        self.request = request
-
-    def __repr__(self):
-        return f'<ErrorResponse {self.code} ({self})>'
-
-
 class AsynchronousResponse:
     header: structs.AoEHeader
     command: structs._AdsStructBase
@@ -311,13 +298,19 @@ class _Connection:
         for consumed, item in from_wire(self.recv_buffer, logger=self.log):
             self.log.debug(
                 '%s', item,
-                extra=dict(direction='<-', bytesize=consumed),
+                extra=dict(
+                    direction='<-',
+                    bytesize=consumed
+                )
             )
             self.recv_buffer = self.recv_buffer[consumed:]
             yield item
 
-    def get_circuit(self, net_id: AmsNetId) -> '_Circuit':
+    def get_circuit(self, net_id: Union[AmsNetId, str]) -> '_Circuit':
         """Get a circuit for (their) Net ID."""
+        if isinstance(net_id, AmsNetId):
+            net_id = repr(net_id)
+
         try:
             return self.circuits[net_id]
         except KeyError:
@@ -545,8 +538,11 @@ class _Circuit:
     def disconnected(self):
         """Disconnected callback."""
 
-    def handle_command(self, header: structs.AoEHeader,
-                       request: Optional[structs._AdsStructBase]):
+    def handle_command(
+        self,
+        header: structs.AoEHeader,
+        request: Optional[structs._AdsStructBase]
+    ) -> list:
         """
         Top-level command dispatcher.
 
@@ -567,8 +563,11 @@ class _Circuit:
             List of commands or byte strings to be serialized.
         """
         command = header.command_id
-        self.log.debug('Handling %s', command,
-                       extra={'sequence': header.invoke_id})
+        self.log.debug(
+            'Handling %s',
+            command,
+            extra={'sequence': header.invoke_id}
+        )
 
         if hasattr(request, 'index_group'):
             keys = [(command, request.index_group),  # type: ignore
@@ -586,10 +585,12 @@ class _Circuit:
 
         raise MissingHandlerError(f'No handler defined for command {keys}')
 
-    def response_to_wire(self, *items: structs.T_Serializable,
-                         request_header: structs.AoEHeader,
-                         ads_error: AdsError = AdsError.NOERR
-                         ) -> bytearray:
+    def response_to_wire(
+        self,
+        *items: structs.T_Serializable,
+        request_header: structs.AoEHeader,
+        ads_error: AdsError = AdsError.NOERR,
+    ) -> bytearray:
         """
         Prepare `items` to be sent over the wire.
 
@@ -621,6 +622,8 @@ class _Circuit:
                 'direction': '->',
                 'sequence': request_header.invoke_id,
                 'bytesize': len(bytes_to_send),
+                'our_address': tuple(request_header.target),
+                'their_address': tuple(request_header.source),
             }
             for idx, item in enumerate(items, 1):
                 extra['counter'] = (idx, len(items))
@@ -628,10 +631,12 @@ class _Circuit:
 
         return bytes_to_send
 
-    def request_to_wire(self, *items: structs.T_Serializable,
-                        ads_error: AdsError = AdsError.NOERR,
-                        target: Optional[structs.AmsAddr] = None,
-                        ) -> bytearray:
+    def request_to_wire(
+        self,
+        *items: structs.T_Serializable,
+        ads_error: AdsError = AdsError.NOERR,
+        target: Optional[structs.AmsAddr] = None,
+    ) -> bytearray:
         """
         Prepare `items` to be sent over the wire.
 
@@ -724,8 +729,8 @@ class ClientCircuit(_Circuit):
         tags = dict(tags or {})
         tags.update({
             'role': Role.Client,
-            'our_address': our_net_id,
-            'their_address': their_net_id,
+            'our_address': (our_net_id, 0),  # TODO
+            'their_address': (their_net_id, 0),
         })
         super().__init__(
             connection=connection,
@@ -742,55 +747,13 @@ class ClientCircuit(_Circuit):
             f'server_host={self.server_host}>'
         )
 
-    def handle_command(self, header: structs.AoEHeader,
-                       response: Optional[structs._AdsStructBase]):
-        """
-        Top-level command dispatcher.
-
-        First stop to determine which method will handle the given command.
-
-        Parameters
-        ----------
-        header : structs.AoEHeader
-            The request header.
-
-        response : structs._AdsStructBase or None
-            The response itself.  May be optional depending on the header's
-            AdsCommandId.
-
-        Returns
-        -------
-        response : list
-            List of commands or byte strings to be serialized.
-        """
-        command = header.command_id
-        self.log.debug('Handling %s', command,
-                       extra={'sequence': header.invoke_id})
-
-        if hasattr(response, 'index_group'):
-            keys = [(command, response.index_group),  # type: ignore
-                    (command, None)]
-        else:
-            keys = [(command, None)]
-
-        for key in keys:
-            try:
-                handler = self._handlers[key]
-            except KeyError:
-                ...
-            else:
-                request = self.id_to_request.pop(header.invoke_id, None)
-                return handler(self, request, header, response)
-
-        raise MissingHandlerError(f'No handler defined for command {keys}')
-
     def _get_symbol_by_request_name(self, request) -> Symbol:
         """Get symbol by a request with a name as its payload."""
         symbol_name = structs.byte_string_to_string(request.data)
         try:
             return self.server.database.get_symbol_by_name(symbol_name)
         except KeyError:
-            raise ErrorResponse(
+            raise RequestFailedError(
                 code=AdsError.DEVICE_SYMBOLNOTFOUND,
                 reason=f'{symbol_name!r} not in database',
                 request=request,
@@ -801,16 +764,18 @@ class ClientCircuit(_Circuit):
         try:
             return self.handle_to_symbol[request.handle]
         except KeyError as ex:
-            raise ErrorResponse(code=AdsError.CLIENT_INVALIDPARM,  # TODO?
-                                reason=f'{ex} bad handle',
-                                request=request) from None
+            raise RequestFailedError(
+                code=AdsError.CLIENT_INVALIDPARM,  # TODO?
+                reason=f'{ex} bad handle',
+                request=request
+            ) from None
 
     @_command_handler(AdsCommandId.ADD_DEVICE_NOTIFICATION)
     def _add_notification(
-            self,
-            request: structs.AdsAddDeviceNotificationRequest,
-            header: structs.AoEHeader,
-            response: structs.AoENotificationHandleResponse,
+        self,
+        request: structs.AdsAddDeviceNotificationRequest,
+        header: structs.AoEHeader,
+        response: structs.AoENotificationHandleResponse,
     ):
         key = (tuple(header.source), request.handle)
         if key in self.unknown_notifications:
@@ -818,10 +783,10 @@ class ClientCircuit(_Circuit):
 
     @_command_handler(AdsCommandId.DEL_DEVICE_NOTIFICATION)
     def _delete_notification(
-            self,
-            request: structs.AdsDeleteDeviceNotificationRequest,
-            header: structs.AoEHeader,
-            response: structs.AoEResponseHeader,
+        self,
+        request: structs.AdsDeleteDeviceNotificationRequest,
+        header: structs.AoEHeader,
+        response: structs.AoEResponseHeader,
     ):
         if request is None:
             return
@@ -889,10 +854,12 @@ class ClientCircuit(_Circuit):
     #     ...
 
     @_command_handler(AdsCommandId.DEVICE_NOTIFICATION)
-    def _device_notification(self,
-                             request,
-                             header: structs.AoEHeader,
-                             stream: structs.AdsNotificationStream):
+    def _device_notification(
+        self,
+        request,
+        header: structs.AoEHeader,
+        stream: structs.AdsNotificationStream
+    ):
         for stamp in stream.stamps:
             timestamp = stamp.timestamp
             for sample in stamp.samples:
@@ -1081,8 +1048,8 @@ class ServerCircuit(_Circuit):
         tags = dict(tags or {})
         tags.update({
             'role': Role.Server,
-            'our_address': our_net_id,
-            'their_address': their_net_id,
+            'our_address': (our_net_id, 0),  # TODO
+            'their_address': (their_net_id, 0),
         })
         super().__init__(
             connection=connection,
@@ -1106,7 +1073,7 @@ class ServerCircuit(_Circuit):
         try:
             return self.server.database.get_symbol_by_name(symbol_name)
         except KeyError:
-            raise ErrorResponse(
+            raise RequestFailedError(
                 code=AdsError.DEVICE_SYMBOLNOTFOUND,
                 reason=f'{symbol_name!r} not in database',
                 request=request,
@@ -1117,9 +1084,11 @@ class ServerCircuit(_Circuit):
         try:
             return self.handle_to_symbol[request.handle]
         except KeyError as ex:
-            raise ErrorResponse(code=AdsError.CLIENT_INVALIDPARM,  # TODO?
-                                reason=f'{ex} bad handle',
-                                request=request) from None
+            raise RequestFailedError(
+                code=AdsError.CLIENT_INVALIDPARM,  # TODO?
+                reason=f'{ex} bad handle',
+                request=request
+            ) from None
 
     @_command_handler(AdsCommandId.ADD_DEVICE_NOTIFICATION)
     def _add_notification(self, header: structs.AoEHeader,
@@ -1184,7 +1153,7 @@ class ServerCircuit(_Circuit):
         try:
             data_area = self.server.database.index_groups[request.index_group]
         except KeyError:
-            raise ErrorResponse(
+            raise RequestFailedError(
                 code=AdsError.DEVICE_INVALIDACCESS,  # TODO?
                 reason=f'Invalid index group: {request.index_group}',
                 request=request,

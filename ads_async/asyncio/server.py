@@ -1,9 +1,8 @@
 import asyncio
 import functools
 import logging
-import typing
 
-from .. import constants, log, protocol, structs, symbols
+from .. import constants, exceptions, log, protocol, structs, symbols
 from . import utils
 
 logger = logging.getLogger(__name__)
@@ -32,9 +31,13 @@ class AsyncioServerConnection:
         self._handle_index = 0
 
     async def send_response(
-            self, *items, request_header,
-            ads_error: constants.AdsError = constants.AdsError.NOERR):
-        bytes_to_send = self.connection.response_to_wire(
+        self,
+        *items,
+        request_header: structs.AoEHeader,
+        ads_error: constants.AdsError = constants.AdsError.NOERR
+    ):
+        circuit = self.connection.get_circuit(request_header.source.net_id)
+        bytes_to_send = circuit.response_to_wire(
             *items,
             request_header=request_header,
             ads_error=ads_error)
@@ -53,22 +56,23 @@ class AsyncioServerConnection:
                 await self._handle_command(header, item)
 
     async def _handle_command(self, header: structs.AoEHeader, item):
+        circuit = self.connection.get_circuit(header.source.net_id)
         try:
-            response = self.connection.handle_command(header, item)
-        except protocol.ErrorResponse as ex:
+            response = circuit.handle_command(header, item)
+        except exceptions.RequestFailedError as ex:
             logger.debug('handle_command failed with caught error',
                          exc_info=ex)
             response = ex
         except Exception as ex:
             logger.exception('handle_command failed with unknown error')
-            response = protocol.ErrorResponse(
+            response = exceptions.RequestFailedError(
                 code=constants.AdsError.DEVICE_ERROR,  # TODO
                 reason=str(ex),
                 request=item,
             )
 
         if response is None:
-            response = protocol.ErrorResponse(
+            response = exceptions.RequestFailedError(
                 code=constants.AdsError.DEVICE_ERROR,  # TODO
                 reason='unhandled codepath',
                 request=item,
@@ -78,12 +82,14 @@ class AsyncioServerConnection:
         if isinstance(response, protocol.AsynchronousResponse):
             response.requester = self
             await self._queue.async_put(response)
-        elif isinstance(response, protocol.ErrorResponse):
+        elif isinstance(response, exceptions.RequestFailedError):
             self.log.error('Error response: %r', response)
 
             err_cls = structs.get_struct_by_command(
                 response.request.command_id,
-                request=False)  # type: typing.Type[structs._AdsStructBase]
+                request=False,
+            )
+            print('err_Cls', err_cls)
             err_response = err_cls(result=response.code)
             await self.send_response(err_response,
                                      request_header=header,
@@ -111,16 +117,19 @@ class AsyncioServer:
     _shutdown_event: asyncio.Event
     server: protocol.Server
 
-    def __init__(self,
-                 database: symbols.Database,
-                 port: int = constants.ADS_TCP_SERVER_PORT,
-                 hosts: list = None):
+    def __init__(
+        self,
+        database: symbols.Database,
+        port: int = constants.ADS_TCP_SERVER_PORT,
+        net_id: str = '127.0.0.1.1.1',  # TODO
+        hosts: list = None,
+    ):
         self._port = port
         self._hosts = hosts or [None]
         self._tasks = utils._TaskHandler()
         self._running = False
         self._shutdown_event = asyncio.Event()
-        self.server = protocol.Server(database)
+        self.server = protocol.Server(database, net_id=net_id)
         self.log = self.server.log
         self.database = database
 
@@ -163,7 +172,7 @@ class AsyncioServer:
         try:
             await connection._receive_loop()
         finally:
-            self.server.remove_client(client_addr)
+            self.server.remove_connection(client_addr)
 
             # TODO: debug stuff:
             import os
@@ -176,7 +185,7 @@ if __name__ == '__main__':
 
     async def test():
         global server
-        from ..symbols import TmcDatabase, dump_memory
+        from ..symbols import TmcDatabase, dump_memory  # noqa
         import pathlib
         module_path = pathlib.Path(__file__).parent.parent
         database = TmcDatabase(module_path / 'tests' / 'kmono.tmc')

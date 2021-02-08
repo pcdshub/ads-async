@@ -61,11 +61,11 @@ class LogFormatter(logging.Formatter):
     def format(self, record):
         message = []
         if hasattr(record, 'our_address'):
-            message.append('%s:%d' % record.our_address)
+            message.append('%s:%s' % record.our_address)
         if hasattr(record, 'direction'):
             message.append('%s' % record.direction)
         if hasattr(record, 'their_address'):
-            message.append('%s:%d' % record.their_address)
+            message.append('%s:%s' % record.their_address)
         if hasattr(record, 'bytesize'):
             message.append('%dB' % record.bytesize)
         if hasattr(record, 'counter'):
