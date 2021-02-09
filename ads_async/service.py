@@ -156,7 +156,7 @@ class SystemService:
         )
         return header + packet
 
-    def parse_add_route_response(self, response: bytes):
+    def parse_add_route_response(self, data: bytes, addr):
         """
         Parse an add route response message.
 
@@ -166,24 +166,25 @@ class SystemService:
             If the response does not match the request for adding a route.
         """
 
-        assert len(response) == 32
+        assert len(data) == 32
         # AMS Packet header defines communication type
-        header = response[0:12]
+        header = data[0:12]
         # If the last byte in the header is 0x80, then this is a response to
         # our request somehow!
         if header[-1] != 0x80:
             raise BadResponse("Not a matching response")
 
         # The response to the request
-        response = response[22:]
+        response = data[22:]
 
         result = dict(
+            source=addr,
             # Convert to a String AMS ID
-            ams_id=repr(AmsNetId.from_buffer_copy(response[12:18])),
+            ams_id=repr(AmsNetId.from_buffer_copy(data[12:18])),
             # Some sort of AMS port? Little endian
-            ams_port=struct.unpack("<H", response[18:20]),
+            ams_port=struct.unpack("<H", data[18:20]),
             # Command code?
-            command_code=struct.unpack("<2s", response[20:22]),
+            command_code=struct.unpack("<2s", data[20:22]),
             password_correct=(response[4:7] == b"\x04\x00\x00"),
             authentication_error=(response[4:7] == b"\x00\x04\x07"),
         )
@@ -207,7 +208,7 @@ class SystemService:
             )
         )
 
-    def parse_get_net_id_response(self, response: bytes) -> dict:
+    def parse_get_net_id_response(self, response: bytes, addr) -> dict:
         """
         Parse a get_net_id response.
 
@@ -216,7 +217,7 @@ class SystemService:
         BadResponse
             If the response does not match the request for getting a net id.
         """
-        if len(response) != 395:
+        if len(response) < 300:
             raise BadResponse("Bad length")
 
         header = response[0:12]
@@ -267,7 +268,7 @@ def send_and_receive_udp(
                 yield sock.recvfrom(recv_length)
             except socket.timeout:
                 # Timeout, but give caller the option to retry
-                yield TimeoutError()
+                raise TimeoutError()
                 sock.sendto(packet, (host, port))
     finally:
         sock.close()
@@ -324,7 +325,8 @@ def add_route_to_plc(
             logger.warning("Timeout; waiting")
             continue
         try:
-            return svc.parse_add_route_response()
+            packet, addr = recv
+            return svc.parse_add_route_response(packet, addr)
         except BadResponse as ex:
             logger.warning("Got bad response; waiting: %s", ex)
             logger.debug("Got bad response; waiting: %s", ex, exc_info=ex)
@@ -356,20 +358,21 @@ def get_plc_net_id(
             logger.warning("Timeout; waiting")
             continue
         try:
-            return svc.parse_get_net_id_response()
+            packet, addr = recv
+            return svc.parse_get_net_id_response(packet, addr)
         except BadResponse as ex:
             logger.warning("Got bad response; waiting: %s", ex)
             logger.debug("Got bad response; waiting: %s", ex, exc_info=ex)
 
 
 if __name__ == "__main__":
-    # print(add_route_to_plc(
-    #     'localhost',
-    #     source_net_id="1.1.1.1.1.1",
-    #     source_name="my_host",
-    # ))
+    print(add_route_to_plc(
+        'plc-tst-proto6.pcdsn',
+        source_net_id="1.1.1.1.1.1",
+        source_name="my_host",
+    ))
     print(
         get_plc_net_id(
-            "localhost",
+            "plc-tst-proto6.pcdsn",
         )
     )
