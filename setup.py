@@ -58,7 +58,7 @@ setup(
     url="https://github.com/pcdshub/ads-async",
     entry_points={
         "console_scripts": [
-            # 'some.module:some_function',
+            "ads-async = ads_async.bin.ads_async:main",
         ],
     },
     include_package_data=True,
