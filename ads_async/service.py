@@ -4,6 +4,9 @@ System service management protocol.
 Communication should be done a layer up using UDP packets.
 
 This protocol is undocumented and this implementation is incomplete.
+
+Note: The API may change significantly here if the protocol reverse engineering
+- or documentation - ever gets fleshed out.
 """
 import enum
 import logging
@@ -38,7 +41,7 @@ class BadResponse(Exception):
     """Mismatched/bad response to the given packet."""
 
 
-class SystemServiceRequestID(enum.IntEnum):
+class SystemServiceRequestCommand(enum.IntEnum):
     GET_INFO = 1
     ADD_ROUTE = 6
 
@@ -58,11 +61,13 @@ class SystemService:
     """
 
     string_encoding = "ascii"
+    REQUEST_MAGIC = b"\x03\x66\x14\x71\x00\x00\x00\x00"
+    RESPONSE_MAGIC = b"\x03\x66\x14\x71\x00\x00\x00\x00"
 
-    def create_header(
+    def create_request_header(
         self,
         source_net_id: str,
-        request_id: SystemServiceRequestID,
+        request_id: SystemServiceRequestCommand,
         port: int = constants.SYSTEM_SERVICE_PORT,
     ) -> bytes:
         """
@@ -72,7 +77,7 @@ class SystemService:
         ----------
         source_net_id : str
             Source Net ID.
-        request_id : SystemServiceRequestID
+        request_id : SystemServiceRequestCommand
             The request type identifier
         port : int, optional
             Service port.
@@ -84,9 +89,8 @@ class SystemService:
         """
         return b"".join(
             (
+                self.REQUEST_MAGIC,
                 # Fixed header (may be "magic", may be meaningful)
-                b"\x03\x66",
-                b"\x14\x71" b"\x00\x00\x00\x00",
                 struct.pack("<H", request_id),
                 # It's possible the request id is 1 or 4 bytes, but this is
                 # marked as padding for now:
@@ -95,6 +99,75 @@ class SystemService:
                 # Service port
                 struct.pack("<H", port),
             )
+        )
+
+    def deserialize_header(
+        self,
+        data: bytes,
+        addr,
+    ) -> bytes:
+        """
+        Deserialize a system service header.
+
+        Parameters
+        ----------
+        data : bytes
+            Header packet.
+
+        addr : (addr, port)
+            Source address and port.
+
+        Returns
+        -------
+        info : dict
+            Header and packet information.
+        """
+        if len(data) < 22:
+            raise BadResponse("Packet not long enough")
+        if data[: len(self.RESPONSE_MAGIC)] != self.RESPONSE_MAGIC:
+            raise BadResponse("Response header magic missing")
+        if data[11] != 0x80:
+            raise BadResponse("Response marker missing")
+
+        return dict(
+            command_id=SystemServiceRequestCommand(struct.unpack("<H", data[8:10])[0]),
+            source_net_id=repr(AmsNetId.from_buffer_copy(data[12:18])),
+            source_ams_port=struct.unpack("<H", data[18:20])[0],
+            source_addr=addr,
+            payload=data[22:],
+            # This may be a sequence identifier?
+            unknown_response_id=struct.unpack("<H", data[20:22])[0],
+        )
+
+    def deserialize_response(
+        self,
+        data: bytes,
+        addr=None,
+    ) -> bytes:
+        """
+        Create a system service header.
+
+        Parameters
+        ----------
+        data : bytes
+            Header packet.
+
+        Returns
+        -------
+        """
+        header_info = self.deserialize_header(data, addr)
+
+        command_id = SystemServiceRequestCommand(struct.unpack("<H", data[8:10])[0])
+        if command_id == SystemServiceRequestCommand.GET_INFO:
+            result = self.deserialize_get_net_id_response(data, addr)
+        elif command_id == SystemServiceRequestCommand.ADD_ROUTE:
+            result = self.deserialize_add_route_response(data, addr)
+        else:
+            result = {}
+
+        return dict(
+            **header_info,
+            **result,
         )
 
     def add_route_to_plc(
@@ -133,9 +206,9 @@ class SystemService:
         route_name = route_name or source_name
 
         # The head of the UDP AMS packet containing host routing information
-        header = self.create_header(
+        header = self.create_request_header(
             source_net_id=source_net_id,
-            request_id=SystemServiceRequestID.ADD_ROUTE,
+            request_id=SystemServiceRequestCommand.ADD_ROUTE,
         )
         return b"".join(
             (
@@ -167,7 +240,7 @@ class SystemService:
             )
         )
 
-    def parse_add_route_response(self, data: bytes, addr):
+    def deserialize_add_route_response(self, data: bytes, addr):
         """
         Parse an add route response message.
 
@@ -178,26 +251,12 @@ class SystemService:
         """
 
         assert len(data) == 32
-        # AMS Packet header defines communication type
-        header = data[0:12]
-        # If the last byte in the header is 0x80, then this is a response to
-        # our request somehow!
-        if header[-1] != 0x80:
-            raise BadResponse("Not a matching response")
-
         # The response to the request
-        response = data[22:]
+        payload = data[22:]
 
         result = dict(
-            source=addr,
-            # Convert to a String AMS ID
-            ams_id=repr(AmsNetId.from_buffer_copy(data[12:18])),
-            # Some sort of AMS port? Little endian
-            ams_port=struct.unpack("<H", data[18:20])[0],
-            # Command code?
-            command_code=struct.unpack("<2s", data[20:22])[0],
-            password_correct=(response[4:7] == b"\x04\x00\x00"),
-            authentication_error=(response[4:7] == b"\x00\x04\x07"),
+            password_correct=(payload[4:7] == b"\x04\x00\x00"),
+            authentication_error=(payload[4:7] == b"\x00\x04\x07"),
         )
         # 0x040000 when password was correct, 0x000407 when it was incorrect
         if not result["password_correct"] and not result["authentication_error"]:
@@ -205,6 +264,11 @@ class SystemService:
             ex.result = result
             raise ex
         return result
+
+    def deserialize_get_net_id_response(self, data: bytes, addr) -> dict:
+        """Deserialize GET_NET_ID payload."""
+        # No additional information
+        return {}
 
     def get_net_id(self, source_net_id="1.1.1.1.1.1") -> bytes:
         """
@@ -217,32 +281,14 @@ class SystemService:
         """
         return b"".join(
             (
-                self.create_header(
+                self.create_request_header(
                     source_net_id=source_net_id,
-                    request_id=SystemServiceRequestID.GET_INFO,
+                    request_id=SystemServiceRequestCommand.GET_INFO,
                 ),
                 # Empty payload?
                 b"\x00\x00\x00\x00",
             )
         )
-
-    def deserialize_get_net_id_response(self, response: bytes, addr) -> dict:
-        """
-        Parse a get_net_id response.
-
-        Raises
-        ------
-        BadResponse
-            If the response does not match the request for getting a net id.
-        """
-        if len(response) < 300:
-            raise BadResponse("Bad length")
-
-        header = response[0:12]
-        if header[-1] == 0x80:
-            return repr(AmsNetId.from_buffer_copy(response[12:18]))
-
-        raise BadResponse("Unknown response")
 
 
 # TODO these will be moved out to some console entrypoint tool
@@ -384,6 +430,7 @@ def get_plc_net_id(
 
 
 if __name__ == "__main__":
+    svc = SystemService()
     print(
         add_route_to_plc(
             "plc-tst-proto6.pcdsn",
