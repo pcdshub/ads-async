@@ -182,9 +182,9 @@ class SystemService:
             # Convert to a String AMS ID
             ams_id=repr(AmsNetId.from_buffer_copy(data[12:18])),
             # Some sort of AMS port? Little endian
-            ams_port=struct.unpack("<H", data[18:20]),
+            ams_port=struct.unpack("<H", data[18:20])[0],
             # Command code?
-            command_code=struct.unpack("<2s", data[20:22]),
+            command_code=struct.unpack("<2s", data[20:22])[0],
             password_correct=(response[4:7] == b"\x04\x00\x00"),
             authentication_error=(response[4:7] == b"\x00\x04\x07"),
         )
@@ -366,11 +366,13 @@ def get_plc_net_id(
 
 
 if __name__ == "__main__":
-    print(add_route_to_plc(
-        'plc-tst-proto6.pcdsn',
-        source_net_id="1.1.1.1.1.1",
-        source_name="my_host",
-    ))
+    print(
+        add_route_to_plc(
+            "plc-tst-proto6.pcdsn",
+            source_net_id="1.1.1.1.1.1",
+            source_name="my_host",
+        )
+    )
     print(
         get_plc_net_id(
             "plc-tst-proto6.pcdsn",
