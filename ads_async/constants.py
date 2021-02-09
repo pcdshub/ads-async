@@ -3,7 +3,11 @@ import enum
 import os
 import typing
 
-ADS_TCP_SERVER_PORT = 0xBF02
+ADS_TCP_SERVER_PORT = 0xBF02  # 48898
+ADS_UDP_SERVER_PORT = 0xBF03  # 48899
+SYSTEM_SERVICE_PORT = 0x2710  # 10000
+
+
 ADS_ASYNC_STRING_ENCODING = os.environ.get("ADS_ASYNC_STRING_ENCODING", "utf-8")
 # TODO: some scenarios where ADS data can be big endian?
 
