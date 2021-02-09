@@ -4,7 +4,7 @@ given TwinCAT3 PLC.
 """
 
 import argparse
-import json as json_mod
+import json
 import logging
 
 from .. import service
@@ -25,7 +25,7 @@ def build_arg_parser(argparser=None):
     argparser.add_argument("host", type=str, help="PLC hostname or IP address")
 
     argparser.add_argument(
-        "--json", action="store_true", help="Output information as JSON"
+        "--table", action="store_true", help="Output information as a table"
     )
 
     return argparser
@@ -57,7 +57,7 @@ def get_plc_info(
     )
 
 
-def main(host, json=False):
+def main(host, table=False):
     """
     Get information about a given TwinCAT3 PLC over UDP.
 
@@ -66,12 +66,14 @@ def main(host, json=False):
     host : str
         Hostname or IP address of PLC.
 
-    json : bool, optional
-        Return results as JSON.
+    table : bool, optional
+        Return results as a table instead of JSON.
     """
     response = get_plc_info(host)
-    if json:
-        return json_mod.dumps(response, indent=4)
+    if table:
+        # TODO
+        ...
 
-    # TODO table
+    result = json.dumps(response, indent=4)
+    print(result)
     return response
