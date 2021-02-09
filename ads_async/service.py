@@ -37,6 +37,12 @@ def serialize_string(value: str, encoding: str) -> bytes:
     )
 
 
+def deserialize_string(data: bytes, encoding: str) -> str:
+    """Deserialize a string (null-terminated with length)."""
+    (length,) = struct.unpack("<H", data[:2])
+    return str(data[2 : 2 + length - 1], encoding)
+
+
 class BadResponse(Exception):
     """Mismatched/bad response to the given packet."""
 
@@ -159,9 +165,11 @@ class SystemService:
 
         command_id = SystemServiceRequestCommand(struct.unpack("<H", data[8:10])[0])
         if command_id == SystemServiceRequestCommand.GET_INFO:
-            result = self.deserialize_get_net_id_response(data, addr)
+            result = self.deserialize_get_info_response(data, addr)
+            header_info.pop("payload")
         elif command_id == SystemServiceRequestCommand.ADD_ROUTE:
             result = self.deserialize_add_route_response(data, addr)
+            header_info.pop("payload")
         else:
             result = {}
 
@@ -265,12 +273,13 @@ class SystemService:
             raise ex
         return result
 
-    def deserialize_get_net_id_response(self, data: bytes, addr) -> dict:
+    def deserialize_get_info_response(self, data: bytes, addr) -> dict:
         """Deserialize GET_NET_ID payload."""
-        # No additional information
-        return {}
+        return {
+            "plc_name": deserialize_string(data[26:], self.string_encoding),
+        }
 
-    def get_net_id(self, source_net_id="1.1.1.1.1.1") -> bytes:
+    def get_info(self, source_net_id="1.1.1.1.1.1") -> bytes:
         """
         Get the AMS Net ID of the target PLC.
 
@@ -390,7 +399,10 @@ def add_route_to_plc(
             continue
         try:
             packet, addr = recv
-            return svc.deserialize_add_route_response(packet, addr)
+            result = svc.deserialize_response(packet, addr)
+            if result["command_id"] != SystemServiceRequestCommand.ADD_ROUTE:
+                raise BadResponse("Not matching response")
+            return result
         except BadResponse as ex:
             logger.warning("Got bad response; waiting: %s", ex)
             logger.debug("Got bad response; waiting: %s", ex, exc_info=ex)
@@ -413,7 +425,7 @@ def get_plc_net_id(
         The Net ID.
     """
     svc = SystemService()
-    to_send = svc.get_net_id()
+    to_send = svc.get_info()
 
     logger.debug("Sending %s to %s", to_send, plc_hostname)
     for recv in send_and_receive_udp(plc_hostname, to_send):
@@ -423,7 +435,10 @@ def get_plc_net_id(
             continue
         try:
             packet, addr = recv
-            return svc.deserialize_get_net_id_response(packet, addr)
+            result = svc.deserialize_response(packet, addr)
+            if result["command_id"] != SystemServiceRequestCommand.GET_INFO:
+                raise BadResponse("Not matching response")
+            return result
         except BadResponse as ex:
             logger.warning("Got bad response; waiting: %s", ex)
             logger.debug("Got bad response; waiting: %s", ex, exc_info=ex)
