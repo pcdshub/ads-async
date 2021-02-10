@@ -86,7 +86,7 @@ def add_route_to_plc(
         Information dictionary of the response.
     """
     svc = service.SystemService()
-    return send_and_receive_service_udp(
+    for result in send_and_receive_service_udp(
         svc,
         plc_hostname,
         svc.add_route_to_plc(
@@ -99,7 +99,9 @@ def add_route_to_plc(
         ),
         command_id=service.SystemServiceRequestCommand.ADD_ROUTE,
         logger=module_logger,
-    )
+    ):
+        # TODO: I'm not sure we really want to add broadcast support here.
+        return result
 
 
 def main(
