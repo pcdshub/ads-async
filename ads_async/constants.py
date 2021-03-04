@@ -333,6 +333,19 @@ class AdsError(enum.IntEnum):
     # sync port is locked
     CLIENT_SYNCPORTLOCKED = 0x55 + ERR_ADSERRS
 
+    @classmethod
+    def _missing_(cls, value):
+        if not 0 <= value <= 0xFFFF:
+            return None
+
+        try:
+            return cls._value2member_map_[value]
+        except KeyError:
+            member = int.__new__(cls, value)
+            member._name_ = f"{value}"
+            member._value_ = value
+            return cls._value2member_map_.setdefault(value, member)
+
 
 class AdsDataType(enum.IntEnum):
     VOID = 0

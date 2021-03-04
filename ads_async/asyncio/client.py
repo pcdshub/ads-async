@@ -707,7 +707,7 @@ class AsyncioClientConnection:
         self._circuits[net_id] = circuit
         return circuit
 
-    def _circuit_cleanup(self, net_id):
+    async def _circuit_cleanup(self, net_id):
         try:
             _ = self._circuits.pop(net_id)
         except KeyError:

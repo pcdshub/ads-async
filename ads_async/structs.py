@@ -5,7 +5,7 @@ import ipaddress
 import struct
 import typing
 
-from . import constants, utils
+from . import constants, exceptions, utils
 from .constants import AoEHeaderFlag
 
 T_AdsStructure = typing.TypeVar("T_AdsStructure", bound="_AdsStructBase")
@@ -169,12 +169,16 @@ class _AdsStructBase(ctypes.LittleEndianStructure):
         -------
         T_AdsStructure
         """
-        # TODO: this is a workaround to not being able to override
-        # `from_buffer`
-        if not cls._payload_fields:
-            return cls.from_buffer(buf)
-
         new_struct = cls.from_buffer(buf)
+
+        # TODO: no way of figuring out the appropriate class for, say,
+        # AoEReadResponse at this point on the protocol level, I think.
+        # So, for now, stash a full buffer copy so it can be reinterpreted as
+        # needed by higher-level callers:
+        new_struct._buffer = bytearray(buf)
+
+        if not cls._payload_fields:
+            return new_struct
 
         payload_buf = memoryview(buf)[ctypes.sizeof(cls) :]
         for attr, fmt, padding, deserialize, serialize in cls._payload_fields:
@@ -397,6 +401,7 @@ class AdsDeviceInfo(AdsVersion):
 
     _fields_ = [
         # Inherits version information from AdsVersion
+        # Name may be 0 or 16 bytes, depending on client version
         ("_name", ctypes.c_char * 16),  # type: ignore
     ]
 
@@ -416,6 +421,15 @@ class AdsDeviceInfo(AdsVersion):
     def version_tuple(self) -> typing.Tuple[int, int, int]:
         """The version tuple: (Version, Revision, Build)"""
         return (self.version, self.revision, self.build)
+
+    @classmethod
+    def deserialize(
+        cls: typing.Type[T_AdsStructure], buf: typing.Union[memoryview, bytearray]
+    ) -> T_AdsStructure:
+        buf = bytearray(buf)
+        if len(buf) == ctypes.sizeof(AdsVersion):
+            buf.extend(b"\x00" * AdsDeviceInfo._name.size)
+        return super().deserialize(buf)
 
 
 class AdsNotificationAttrib(_AdsStructBase):  # TODO: Unused; may be removed?
@@ -1169,19 +1183,6 @@ class AoEReadResponse(AoEResponseHeader):
         self.read_length = len(serialize(self.data))
         return super().serialize()
 
-    @classmethod
-    def deserialize(
-        cls: typing.Type[T_AdsStructure], buf: typing.Union[memoryview, bytearray]
-    ) -> T_AdsStructure:
-        # TODO: no way of figuring out the appropriate class at this point on
-        # the protocol level, I think
-        response = super().deserialize(buf)
-        # Stash for later use (TODO rework)
-        # TODO: may be avoided with more ctypes magic, looking at underlying
-        # buffer
-        response._buffer = bytearray(buf)
-        return response
-
     def upcast_by_index_group(
         self, index_group: constants.AdsIndexGroup
     ) -> "AoEHandleResponse":
@@ -1193,7 +1194,11 @@ class AoEReadResponse(AoEResponseHeader):
         """
         if self.result != constants.AdsError.NOERR:
             # TODO: exception type
-            raise ValueError(f"Error response: {self.result.name}")
+            raise exceptions.RequestFailedError(
+                f"Received error code {self.result.name} ({self.result})",
+                code=self.result,
+                request=None,
+            )
 
         if index_group == constants.AdsIndexGroup.SYM_INFOBYNAMEEX:
             return AdsSymbolEntry.deserialize(
