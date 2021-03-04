@@ -387,49 +387,10 @@ class AdsVersion(_AdsStructBase):
         ("build", ctypes.c_uint16),
     ]
 
-
-@use_for_request(constants.AdsCommandId.READ_DEVICE_INFO)
-class AdsDeviceInfoRequest(_AdsStructBase):
-    _fields_ = []
-
-
-@use_for_response(constants.AdsCommandId.READ_DEVICE_INFO)
-class AdsDeviceInfo(AdsVersion):
-    """Contains the version number, revision number and build number."""
-
-    _name: ctypes.c_char
-
-    _fields_ = [
-        # Inherits version information from AdsVersion
-        # Name may be 0 or 16 bytes, depending on client version
-        ("_name", ctypes.c_char * 16),  # type: ignore
-    ]
-
-    name = _create_byte_string_property(
-        "_name", encoding=constants.ADS_ASYNC_STRING_ENCODING
-    )
-    _dict_mapping = {"_name": "name"}
-
-    def __init__(self, version: int, revision: int, build: int, name: str):
-        super().__init__()
-        self.version = version
-        self.revision = revision
-        self.build = build
-        self.name = name
-
     @property
-    def version_tuple(self) -> typing.Tuple[int, int, int]:
+    def as_tuple(self) -> typing.Tuple[int, int, int]:
         """The version tuple: (Version, Revision, Build)"""
         return (self.version, self.revision, self.build)
-
-    @classmethod
-    def deserialize(
-        cls: typing.Type[T_AdsStructure], buf: typing.Union[memoryview, bytearray]
-    ) -> T_AdsStructure:
-        buf = bytearray(buf)
-        if len(buf) == ctypes.sizeof(AdsVersion):
-            buf.extend(b"\x00" * AdsDeviceInfo._name.size)
-        return super().deserialize(buf)
 
 
 class AdsNotificationAttrib(_AdsStructBase):  # TODO: Unused; may be removed?
@@ -1244,6 +1205,59 @@ class AoENotificationHandleResponse(AoEResponseHeader):
     ):
         super().__init__(result)
         self.handle = handle
+
+
+@use_for_request(constants.AdsCommandId.READ_DEVICE_INFO)
+class AdsDeviceInfoRequest(_AdsStructBase):
+    _fields_ = []
+
+
+@use_for_response(constants.AdsCommandId.READ_DEVICE_INFO)
+class AdsDeviceInfo(AoEResponseHeader):
+    """Contains the version number, revision number and build number."""
+
+    _name: ctypes.c_char
+
+    _fields_ = [
+        ("version", AdsVersion),
+        # Name may be 0 or 16 bytes, depending on client version
+        ("_name", ctypes.c_char * 16),  # type: ignore
+    ]
+
+    name = _create_byte_string_property(
+        "_name", encoding=constants.ADS_ASYNC_STRING_ENCODING
+    )
+    _dict_mapping = {"_name": "name"}
+
+    def __init__(
+        self,
+        result: constants.AdsError = constants.AdsError.NOERR,
+        version: int = 0,
+        revision: int = 0,
+        build: int = 0,
+        name: str = "",
+    ):
+        super().__init__(result=result)
+        self.result = result
+        self.version.version = version
+        self.version.revision = revision
+        self.version.build = build
+        self.name = name
+
+    @property
+    def version_tuple(self) -> typing.Tuple[int, int, int]:
+        """The version tuple: (Version, Revision, Build)"""
+        return self.version.as_tuple
+
+    @classmethod
+    def deserialize(
+        cls: typing.Type[T_AdsStructure], buf: typing.Union[memoryview, bytearray]
+    ) -> T_AdsStructure:
+        buf = bytearray(buf)
+        if len(buf) < ctypes.sizeof(AdsDeviceInfo):
+            # Empty response is possible if there's no project loaded
+            buf.extend(b"\x00" * (ctypes.sizeof(AdsDeviceInfo) - len(buf)))
+        return super().deserialize(buf)
 
 
 def serialize_data(
