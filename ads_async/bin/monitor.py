@@ -8,7 +8,7 @@ import datetime
 import logging
 from typing import List, Optional
 
-from .. import constants
+from .. import constants, structs
 from ..asyncio.client import Client
 from . import utils
 from .info import get_plc_info
@@ -126,8 +126,11 @@ def monitor_symbols(
 
     async def monitor(symbol):
         notification = await symbol.add_notification()
-        async for value in notification:
+        async for raw_response in notification:
             now = datetime.datetime.now()
+            value = structs.deserialize_data_by_symbol_entry(
+                symbol.info, raw_response.data
+            )
             print(f"{now}\t{symbol.name}\t{value}")
 
     async def main():
