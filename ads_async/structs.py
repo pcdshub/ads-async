@@ -1144,7 +1144,7 @@ class AoEReadResponse(AoEResponseHeader):
         *,
         result: constants.AdsError = constants.AdsError.NOERR,
         length: int = 0,
-        data: typing.Any = None,
+        data: typing.Any = b"",
     ):
         super().__init__(result=result)
         self.read_length = length

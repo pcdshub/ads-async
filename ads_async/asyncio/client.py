@@ -207,7 +207,7 @@ class _BlockingRequest:
 
     async def wait(self, timeout=2.0):
         error_task = asyncio.create_task(self._error_event.wait())
-        done, pending = await asyncio.wait(
+        done, _ = await asyncio.wait(
             {self._event.wait(), error_task},
             return_when=asyncio.FIRST_COMPLETED,
             timeout=timeout,
@@ -216,6 +216,7 @@ class _BlockingRequest:
             raise TimeoutError(f"Response not received in {timeout} seconds")
         if error_task in done:
             raise RuntimeError("Error occurred while waiting")
+        return self.response
 
 
 class Symbol:
@@ -512,8 +513,9 @@ class AsyncioClientCircuit:
             await req.wait()
         result = getattr(req.response, "result", None)
         if result is not None and result != constants.AdsError.NOERR:
+            error_code = getattr(result, "name", result)
             raise exceptions.RequestFailedError(
-                f"Request {item} failed with {result}",
+                f"Request {item} failed with {error_code}",
                 code=result,
                 request=req,
             )

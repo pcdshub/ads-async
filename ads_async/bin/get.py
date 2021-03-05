@@ -72,6 +72,7 @@ def get_symbols(
     timeout: float = 2.0,
     add_route: bool = False,
     route_host: str = "",
+    include_exceptions: bool = True,
 ) -> dict:
     """
     Get symbol values from a PLC.
@@ -128,9 +129,12 @@ def get_symbols(
                     symbol = circuit.get_symbol_by_name(symbol_name)
                     try:
                         result[symbol_name] = await symbol.read()
-                    except TimeoutError:
-                        # TODO: bugs
-                        continue
+                    except Exception as ex:
+                        if include_exceptions:
+                            result[
+                                symbol_name
+                            ] = f"(Exception) {ex.__class__.__name__} {ex}"
+
         return result
 
     return asyncio.run(main())
