@@ -205,13 +205,17 @@ class _BlockingRequest:
         self.response = response
         self._event.set()
 
-    async def wait(self):
+    async def wait(self, timeout=2.0):
+        error_task = asyncio.create_task(self._error_event.wait())
         done, pending = await asyncio.wait(
-            [self._event.wait(), self._error_event.wait()],
+            {self._event.wait(), error_task},
             return_when=asyncio.FIRST_COMPLETED,
+            timeout=timeout,
         )
-        if self._error_event in done:
-            raise Exception()
+        if not done:
+            raise TimeoutError(f"Response not received in {timeout} seconds")
+        if error_task in done:
+            raise RuntimeError("Error occurred while waiting")
 
 
 class Symbol:

@@ -126,7 +126,11 @@ def get_symbols(
             async with client.get_circuit(plc_net_id) as circuit:
                 for symbol_name in symbols:
                     symbol = circuit.get_symbol_by_name(symbol_name)
-                    result[symbol_name] = await symbol.read()
+                    try:
+                        result[symbol_name] = await symbol.read()
+                    except TimeoutError:
+                        # TODO: bugs
+                        continue
         return result
 
     return asyncio.run(main())
