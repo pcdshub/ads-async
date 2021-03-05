@@ -180,11 +180,12 @@ class _BlockingRequest:
     response: Optional[structs.T_AdsStructure]
     options: dict
 
-    def __init__(self, owner, request, **options):
+    def __init__(self, owner, request, error_event, **options):
         self.owner = owner
         self.request = request
         self.options = options
         self._event = asyncio.Event()
+        self._error_event = error_event
         self.header = None
         self.response = None
 
@@ -205,7 +206,12 @@ class _BlockingRequest:
         self._event.set()
 
     async def wait(self):
-        await self._event.wait()
+        done, pending = await asyncio.wait(
+            [self._event.wait(), self._error_event.wait()],
+            return_when=asyncio.FIRST_COMPLETED,
+        )
+        if self._error_event in done:
+            raise Exception()
 
 
 class Symbol:
@@ -496,9 +502,11 @@ class AsyncioClientCircuit:
             The port to send the item to.
         """
         port = port or self.default_port
-        async with _BlockingRequest(self, item, port=port) as req:
+        async with _BlockingRequest(
+            self, item, port=port, error_event=self.connection._disconnect_event
+        ) as req:
             await req.wait()
-        result = getattr(req, "result", None)
+        result = getattr(req.response, "result", None)
         if result is not None and result != constants.AdsError.NOERR:
             raise exceptions.RequestFailedError(
                 f"Request {item} failed with {result}",
@@ -657,6 +665,7 @@ class AsyncioClientConnection:
         their_address: typing.Tuple[str, int],
         our_net_id: Optional[str] = None,  # can be determined later
         reconnect_rate: Optional[int] = 10,
+        request_timeout: float = 2.0,
     ):
         self.connection = protocol.ClientConnection(
             their_address=their_address,
@@ -671,6 +680,8 @@ class AsyncioClientConnection:
         self.user_callback_executor = utils.CallbackExecutor(self.log)
         self.reconnect_rate = reconnect_rate
         self._connect_event = asyncio.Event()
+        self._disconnect_event = asyncio.Event()
+        self.request_timeout = request_timeout
         self._circuits = {}
 
     async def __aenter__(self):
@@ -740,6 +751,7 @@ class AsyncioClientConnection:
                 )
             except OSError:
                 self.log.exception("Failed to connect")
+                self._disconnect_event.set()
             else:
                 await self._connected_loop()
 
@@ -766,6 +778,7 @@ class AsyncioClientConnection:
                 "Auto-configuring local net ID: %s", self.connection.our_net_id
             )
 
+        self._disconnect_event.clear()
         self._connect_event.set()
         while True:
             data = await self.reader.read(1024)
@@ -773,6 +786,7 @@ class AsyncioClientConnection:
                 self.connection.disconnected()
                 self.log.debug("Disconnected")
                 self._connect_event.clear()
+                self._disconnect_event.set()
                 break
 
             for header, item in self.connection.received_data(data):

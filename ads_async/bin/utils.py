@@ -1,10 +1,16 @@
 import logging
+import os
 import socket
 
 from .. import constants, service
 from ..service import BadResponse
 
 module_logger = logging.getLogger(__name__)
+
+ADS_ASYNC_CLIENT_NET_ID = os.environ.get("ADS_ASYNC_CLIENT_NET_ID", None)
+ADS_ASYNC_CLIENT_IP = os.environ.get("ADS_ASYNC_CLIENT_IP", None)
+ADS_ASYNC_USERNAME = os.environ.get("ADS_ASYNC_USERNAME", "Administrator")
+ADS_ASYNC_PASSWORD = os.environ.get("ADS_ASYNC_PASSWORD", "1")
 
 
 def _send_and_receive_udp(
