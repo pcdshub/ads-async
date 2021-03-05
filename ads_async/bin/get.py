@@ -42,7 +42,7 @@ def build_arg_parser(argparser=None):
     argparser.add_argument(
         "--our-net-id",
         type=str,
-        required=not len(utils.ADS_ASYNC_CLIENT_NET_ID or ""),
+        required=False,
         default=utils.ADS_ASYNC_CLIENT_NET_ID,
         help=(
             "Net ID to report as the client (environment variable "
@@ -92,6 +92,11 @@ def get_symbols(
     symbol_value : any
         Symbol value.
     """
+    if not our_net_id:
+        if route_host and route_host[0].isnumeric():
+            our_net_id = f"{route_host}.1.1"
+    if not route_host and our_net_id:
+        route_host = ".".join(our_net_id.split(".")[:4])
     if plc_net_id is None:
         try:
             plc_info = next(get_plc_info(plc_hostname, timeout=timeout))
