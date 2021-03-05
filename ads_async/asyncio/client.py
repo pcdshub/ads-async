@@ -80,7 +80,7 @@ class Notification(utils.CallbackHandler):
                     # TODO optionally can wait for reconnection, but only
                     # if notification is checked and re-added if necessary
                     # for scenarios when the PLC reboots
-                    raise RuntimeError("")
+                    raise exceptions.DisconnectedError("Disconnected")
                 yield get_task.result()
         finally:
             await self.remove_callback(sid)
@@ -227,7 +227,7 @@ class _BlockingRequest:
         if not done:
             raise TimeoutError(f"Response not received in {timeout} seconds")
         if error_task in done:
-            raise RuntimeError("Error occurred while waiting")
+            raise exceptions.DisconnectedError("Disconnected")
         return self.response
 
 
