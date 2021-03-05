@@ -65,11 +65,24 @@ class Notification(utils.CallbackHandler):
         async def iter_callback(sub, header, timestamp, sample):
             await queue.async_put((header, timestamp, sample))
 
+        error_task = asyncio.create_task(
+            # TODO
+            self.owner.connection._disconnect_event.wait()
+        )
         sid = self.add_callback(iter_callback)
         try:
             while True:
-                item = await queue.async_get()
-                yield item
+                get_task = asyncio.create_task(queue.async_get())
+                done, _ = await asyncio.wait(
+                    {get_task, error_task},
+                    return_when=asyncio.FIRST_COMPLETED,
+                )
+                if error_task in done:
+                    # TODO optionally can wait for reconnection, but only
+                    # if notification is checked and re-added if necessary
+                    # for scenarios when the PLC reboots
+                    raise RuntimeError("")
+                yield get_task.result()
         finally:
             await self.remove_callback(sid)
 
@@ -307,6 +320,48 @@ class Symbol:
                 ...
 
         return data
+
+    async def add_notification(
+        self,
+        length: int = 1000,
+        mode: AdsTransmissionMode = AdsTransmissionMode.SERVERCYCLE,
+        max_delay: int = 1,
+        cycle_time: int = 100,
+    ) -> Notification:
+        """
+        Add an advanced notification by way of index group/offset.
+
+        Parameters
+        -----------
+        length : int
+            Maximum length of each notification, in bytes.
+
+        mode : AdsTransmissionMode
+            Specifies if the event should be fired cyclically or only if the
+            variable has changed.
+
+        max_delay : int
+            The event is fired at *latest* when this time has elapsed. [ms]
+
+        cycle_time : int
+            The ADS server checks whether the variable has changed after this
+            time interval. [ms]
+
+        port : AmsPort, optional
+            Port to request notifications from.  Defaults to the current target
+            port.
+        """
+        if not self.is_initialized:
+            # TODO: ``add_notification`` API inconsistent due to ``initialize``:
+            await self.initialize()
+        return self.owner.add_notification_by_index(
+            self.index_group,
+            self.index_offset,
+            length=length,
+            mode=mode,
+            max_delay=max_delay,
+            cycle_time=cycle_time,
+        )
 
 
 class AsyncioClientCircuit:

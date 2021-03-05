@@ -14,7 +14,7 @@ import ads_async
 DESCRIPTION = __doc__
 
 
-MODULES = ("get", "info", "route")
+MODULES = ("get", "monitor", "info", "route")
 
 
 def _try_import(module):
