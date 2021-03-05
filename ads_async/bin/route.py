@@ -8,8 +8,7 @@ import json
 import logging
 from typing import Optional
 
-from .. import service
-from . import utils
+from .. import constants, service
 from .utils import send_and_receive_service_udp
 
 DESCRIPTION = __doc__
@@ -32,10 +31,16 @@ def build_arg_parser(argparser=None):
         help="Our reported name, used for the route name by default",
     )
     argparser.add_argument(
-        "--username", default=utils.ADS_ASYNC_USERNAME, type=str, help="Login username"
+        "--username",
+        default=constants.ADS_ASYNC_USERNAME,
+        type=str,
+        help="Login username",
     )
     argparser.add_argument(
-        "--password", default=utils.ADS_ASYNC_PASSWORD, type=str, help="Login password"
+        "--password",
+        default=constants.ADS_ASYNC_PASSWORD,
+        type=str,
+        help="Login password",
     )
     argparser.add_argument("--route-name", default=None, type=str, help="Route name")
     argparser.add_argument(
@@ -56,8 +61,8 @@ def add_route_to_plc(
     plc_hostname: str,
     source_net_id: str,
     source_name: str,
-    username: str = utils.ADS_ASYNC_USERNAME,
-    password: str = utils.ADS_ASYNC_PASSWORD,
+    username: str = constants.ADS_ASYNC_USERNAME,
+    password: str = constants.ADS_ASYNC_PASSWORD,
     route_name: Optional[str] = None,
     net_id_to_add: Optional[str] = None,
 ) -> dict:
@@ -110,8 +115,8 @@ def main(
     source_net_id: str,
     source_name: str,
     *,
-    username: str = utils.ADS_ASYNC_USERNAME,
-    password: str = utils.ADS_ASYNC_PASSWORD,
+    username: str = constants.ADS_ASYNC_USERNAME,
+    password: str = constants.ADS_ASYNC_PASSWORD,
     route_name: Optional[str] = None,
     add_net_id: Optional[str] = None,
     table: bool = False,

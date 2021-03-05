@@ -349,7 +349,7 @@ class _Connection:
 
     @our_net_id.setter
     def our_net_id(self, our_net_id: str):
-        our_net_id = our_net_id or ("not_yet_set", 0)
+        our_net_id = our_net_id or "not_yet_set"
         self._our_net_id = str(our_net_id)
         self._log_tags["our_net_id"] = self._our_net_id
 

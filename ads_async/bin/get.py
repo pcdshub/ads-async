@@ -10,7 +10,6 @@ from typing import List, Optional
 
 from .. import constants
 from ..asyncio.client import Client
-from . import utils
 from .info import get_plc_info
 from .route import add_route_to_plc
 
@@ -43,19 +42,19 @@ def build_arg_parser(argparser=None):
         "--our-net-id",
         type=str,
         required=False,
-        default=utils.ADS_ASYNC_CLIENT_NET_ID,
+        default=constants.ADS_ASYNC_LOCAL_NET_ID,
         help=(
             "Net ID to report as the client (environment variable "
-            "ADS_ASYNC_CLIENT_NET_ID)"
+            "ADS_ASYNC_LOCAL_NET_ID)"
         ),
     )
     argparser.add_argument(
         "--our-host",
         type=str,
-        default=utils.ADS_ASYNC_CLIENT_IP,
+        default=constants.ADS_ASYNC_LOCAL_IP,
         help=(
             "Host or IP to report when adding a route (environment variable "
-            "ADS_ASYNC_CLIENT_IP)"
+            "ADS_ASYNC_LOCAL_IP)"
         ),
     )
     argparser.add_argument(
@@ -100,7 +99,7 @@ def get_symbols(
     if plc_net_id is None:
         try:
             plc_info = next(get_plc_info(plc_hostname, timeout=timeout))
-        except TimeoutError:
+        except (TimeoutError, StopIteration):
             plc_net_id = f"{plc_hostname}.1.1"
             module_logger.warning(
                 "Failed to get PLC information through service port; "
