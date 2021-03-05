@@ -1340,3 +1340,51 @@ def deserialize_data(
     ctypes_type = data_type.ctypes_type._type_  # type: ignore
     st = struct.Struct(f"{endian}{length}{ctypes_type}")
     return st.size, st.unpack(data)
+
+
+def deserialize_data_by_symbol_entry(
+    info: AdsSymbolEntry,
+    data: bytes,
+    *,
+    endian="<",
+    string_encoding: str = constants.ADS_ASYNC_STRING_ENCODING,
+) -> typing.Tuple[int, typing.Any]:
+    """
+    Deserialize symbol data from the wire, given AdsSymbolEntry information.
+
+    Parameters
+    ----------
+    info : AdsSymbolEntry
+        The data type information.
+
+    data : bytes
+        The wire data to deserialize.
+
+    endian: str, optional
+        Endianness of the stored data.  Defaults to little-endian.
+
+    Returns
+    -------
+    bytes_consumed : int
+        Number of bytes consumed.
+
+    value :
+        The deserialized value.
+    """
+    ctypes_type = info.data_type.ctypes_type
+    _, data = deserialize_data(
+        data_type=info.data_type,
+        length=info.size // ctypes.sizeof(ctypes_type),
+        data=data,
+    )
+
+    if info.data_type == constants.AdsDataType.STRING:
+        try:
+            data = b"".join(data)
+            data = data[: data.index(0)]
+            return str(data, string_encoding)
+        except ValueError:
+            # Fall through
+            ...
+
+    return data

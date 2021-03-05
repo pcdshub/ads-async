@@ -1,7 +1,6 @@
 import asyncio
 import collections
 import contextvars
-import ctypes
 import ipaddress
 import typing
 from typing import Optional
@@ -302,24 +301,11 @@ class Symbol:
             size=self.info.size,
         )
 
-        # TODO: move this handling up
-        ctypes_type = self.info.data_type.ctypes_type
-        _, data = structs.deserialize_data(
-            data_type=self.info.data_type,
-            length=self.info.size // ctypes.sizeof(ctypes_type),
+        return structs.deserialize_data_by_symbol_entry(
+            self.info,
             data=response.data,
+            string_encoding=self.string_encoding,
         )
-
-        if self.info.data_type == constants.AdsDataType.STRING:
-            try:
-                data = b"".join(data)
-                data = data[: data.index(0)]
-                return str(data, self.string_encoding)
-            except ValueError:
-                # Fall through
-                ...
-
-        return data
 
     async def add_notification(
         self,
