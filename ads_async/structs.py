@@ -481,6 +481,17 @@ class AdsNotificationLogMessage(_AdsStructBase):
     def sender_name(self):
         return bytes(self._sender_name).split(b"\0")[0]
 
+    @classmethod
+    def deserialize(
+        cls: typing.Type[T_AdsStructure], buf: typing.Union[memoryview, bytearray]
+    ) -> "AdsNotificationLogMessage":
+        """Deserialize a log message."""
+        # message_length is not reliable when nearing 255+ characters!
+        new_struct = cls.from_buffer(buf)
+        payload_buf = memoryview(buf)[ctypes.sizeof(cls) :]
+        new_struct.message = bytes(payload_buf)
+        return new_struct
+
 
 class AdsNotificationHeader(_AdsStructBase):
     """This structure is also passed to the callback function."""
