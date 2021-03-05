@@ -1375,7 +1375,7 @@ def deserialize_data_by_symbol_entry(
     _, data = deserialize_data(
         data_type=info.data_type,
         length=info.size // ctypes.sizeof(ctypes_type),
-        data=data,
+        data=memoryview(data)[: info.size],
     )
 
     if info.data_type == constants.AdsDataType.STRING:

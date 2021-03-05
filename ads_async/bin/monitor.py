@@ -4,7 +4,6 @@ given TwinCAT3 PLC.
 """
 import argparse
 import asyncio
-import datetime
 import logging
 from typing import List, Optional
 
@@ -126,12 +125,9 @@ def monitor_symbols(
 
     async def monitor(symbol):
         notification = await symbol.add_notification()
-        async for raw_response in notification:
-            now = datetime.datetime.now()
-            value = structs.deserialize_data_by_symbol_entry(
-                symbol.info, raw_response.data
-            )
-            print(f"{now}\t{symbol.name}\t{value}")
+        async for _, timestamp, sample in notification:
+            value = structs.deserialize_data_by_symbol_entry(symbol.info, sample.data)
+            print(f"{timestamp}\t{symbol.name}\t{value}")
 
     async def main():
         async with Client(
