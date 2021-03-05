@@ -7,8 +7,13 @@ from ..service import BadResponse
 
 module_logger = logging.getLogger(__name__)
 
+try:
+    IP_FROM_HOST = socket.gethostbyname(socket.gethostname())
+except Exception:
+    IP_FROM_HOST = ""
+
 ADS_ASYNC_CLIENT_NET_ID = os.environ.get("ADS_ASYNC_CLIENT_NET_ID", None)
-ADS_ASYNC_CLIENT_IP = os.environ.get("ADS_ASYNC_CLIENT_IP", None)
+ADS_ASYNC_CLIENT_IP = os.environ.get("ADS_ASYNC_CLIENT_IP", IP_FROM_HOST)
 ADS_ASYNC_USERNAME = os.environ.get("ADS_ASYNC_USERNAME", "Administrator")
 ADS_ASYNC_PASSWORD = os.environ.get("ADS_ASYNC_PASSWORD", "1")
 
