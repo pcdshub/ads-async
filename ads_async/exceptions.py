@@ -8,6 +8,10 @@ class AdsAsyncException(Exception):
     ...
 
 
+class DisconnectedError(Exception):
+    """TCP/IP disconnection."""
+
+
 class RequestFailedError(AdsAsyncException):
     code: AdsError
     reason: str

@@ -14,7 +14,7 @@ import ads_async
 DESCRIPTION = __doc__
 
 
-MODULES = ("info", "route")
+MODULES = ("get", "monitor", "info", "route")
 
 
 def _try_import(module):
@@ -41,7 +41,7 @@ def _build_commands():
 
         for module, ex in unavailable:
             DESCRIPTION += (
-                f"WARNING ads-async {module!r} is unavailable due to:"
+                f"\nWARNING ads-async {module!r} is unavailable due to:"
                 f"\n\t{ex.__class__.__name__}: {ex}"
             )
 

@@ -5,7 +5,7 @@ import ipaddress
 import struct
 import typing
 
-from . import constants, utils
+from . import constants, exceptions, utils
 from .constants import AoEHeaderFlag
 
 T_AdsStructure = typing.TypeVar("T_AdsStructure", bound="_AdsStructBase")
@@ -169,12 +169,16 @@ class _AdsStructBase(ctypes.LittleEndianStructure):
         -------
         T_AdsStructure
         """
-        # TODO: this is a workaround to not being able to override
-        # `from_buffer`
-        if not cls._payload_fields:
-            return cls.from_buffer(buf)
-
         new_struct = cls.from_buffer(buf)
+
+        # TODO: no way of figuring out the appropriate class for, say,
+        # AoEReadResponse at this point on the protocol level, I think.
+        # So, for now, stash a full buffer copy so it can be reinterpreted as
+        # needed by higher-level callers:
+        new_struct._buffer = bytearray(buf)
+
+        if not cls._payload_fields:
+            return new_struct
 
         payload_buf = memoryview(buf)[ctypes.sizeof(cls) :]
         for attr, fmt, padding, deserialize, serialize in cls._payload_fields:
@@ -383,37 +387,8 @@ class AdsVersion(_AdsStructBase):
         ("build", ctypes.c_uint16),
     ]
 
-
-@use_for_request(constants.AdsCommandId.READ_DEVICE_INFO)
-class AdsDeviceInfoRequest(_AdsStructBase):
-    _fields_ = []
-
-
-@use_for_response(constants.AdsCommandId.READ_DEVICE_INFO)
-class AdsDeviceInfo(AdsVersion):
-    """Contains the version number, revision number and build number."""
-
-    _name: ctypes.c_char
-
-    _fields_ = [
-        # Inherits version information from AdsVersion
-        ("_name", ctypes.c_char * 16),  # type: ignore
-    ]
-
-    name = _create_byte_string_property(
-        "_name", encoding=constants.ADS_ASYNC_STRING_ENCODING
-    )
-    _dict_mapping = {"_name": "name"}
-
-    def __init__(self, version: int, revision: int, build: int, name: str):
-        super().__init__()
-        self.version = version
-        self.revision = revision
-        self.build = build
-        self.name = name
-
     @property
-    def version_tuple(self) -> typing.Tuple[int, int, int]:
+    def as_tuple(self) -> typing.Tuple[int, int, int]:
         """The version tuple: (Version, Revision, Build)"""
         return (self.version, self.revision, self.build)
 
@@ -505,6 +480,17 @@ class AdsNotificationLogMessage(_AdsStructBase):
     @property
     def sender_name(self):
         return bytes(self._sender_name).split(b"\0")[0]
+
+    @classmethod
+    def deserialize(
+        cls: typing.Type[T_AdsStructure], buf: typing.Union[memoryview, bytearray]
+    ) -> "AdsNotificationLogMessage":
+        """Deserialize a log message."""
+        # message_length is not reliable when nearing 255+ characters!
+        new_struct = cls.from_buffer(buf)
+        payload_buf = memoryview(buf)[ctypes.sizeof(cls) :]
+        new_struct.message = bytes(payload_buf)
+        return new_struct
 
 
 class AdsNotificationHeader(_AdsStructBase):
@@ -1158,7 +1144,7 @@ class AoEReadResponse(AoEResponseHeader):
         *,
         result: constants.AdsError = constants.AdsError.NOERR,
         length: int = 0,
-        data: typing.Any = None,
+        data: typing.Any = b"",
     ):
         super().__init__(result=result)
         self.read_length = length
@@ -1168,19 +1154,6 @@ class AoEReadResponse(AoEResponseHeader):
         # TODO: double serialization
         self.read_length = len(serialize(self.data))
         return super().serialize()
-
-    @classmethod
-    def deserialize(
-        cls: typing.Type[T_AdsStructure], buf: typing.Union[memoryview, bytearray]
-    ) -> T_AdsStructure:
-        # TODO: no way of figuring out the appropriate class at this point on
-        # the protocol level, I think
-        response = super().deserialize(buf)
-        # Stash for later use (TODO rework)
-        # TODO: may be avoided with more ctypes magic, looking at underlying
-        # buffer
-        response._buffer = bytearray(buf)
-        return response
 
     def upcast_by_index_group(
         self, index_group: constants.AdsIndexGroup
@@ -1193,7 +1166,11 @@ class AoEReadResponse(AoEResponseHeader):
         """
         if self.result != constants.AdsError.NOERR:
             # TODO: exception type
-            raise ValueError(f"Error response: {self.result.name}")
+            raise exceptions.RequestFailedError(
+                f"Received error code {self.result.name} ({self.result})",
+                code=self.result,
+                request=None,
+            )
 
         if index_group == constants.AdsIndexGroup.SYM_INFOBYNAMEEX:
             return AdsSymbolEntry.deserialize(
@@ -1239,6 +1216,59 @@ class AoENotificationHandleResponse(AoEResponseHeader):
     ):
         super().__init__(result)
         self.handle = handle
+
+
+@use_for_request(constants.AdsCommandId.READ_DEVICE_INFO)
+class AdsDeviceInfoRequest(_AdsStructBase):
+    _fields_ = []
+
+
+@use_for_response(constants.AdsCommandId.READ_DEVICE_INFO)
+class AdsDeviceInfo(AoEResponseHeader):
+    """Contains the version number, revision number and build number."""
+
+    _name: ctypes.c_char
+
+    _fields_ = [
+        ("version", AdsVersion),
+        # Name may be 0 or 16 bytes, depending on client version
+        ("_name", ctypes.c_char * 16),  # type: ignore
+    ]
+
+    name = _create_byte_string_property(
+        "_name", encoding=constants.ADS_ASYNC_STRING_ENCODING
+    )
+    _dict_mapping = {"_name": "name"}
+
+    def __init__(
+        self,
+        result: constants.AdsError = constants.AdsError.NOERR,
+        version: int = 0,
+        revision: int = 0,
+        build: int = 0,
+        name: str = "",
+    ):
+        super().__init__(result=result)
+        self.result = result
+        self.version.version = version
+        self.version.revision = revision
+        self.version.build = build
+        self.name = name
+
+    @property
+    def version_tuple(self) -> typing.Tuple[int, int, int]:
+        """The version tuple: (Version, Revision, Build)"""
+        return self.version.as_tuple
+
+    @classmethod
+    def deserialize(
+        cls: typing.Type[T_AdsStructure], buf: typing.Union[memoryview, bytearray]
+    ) -> T_AdsStructure:
+        buf = bytearray(buf)
+        if len(buf) < ctypes.sizeof(AdsDeviceInfo):
+            # Empty response is possible if there's no project loaded
+            buf.extend(b"\x00" * (ctypes.sizeof(AdsDeviceInfo) - len(buf)))
+        return super().deserialize(buf)
 
 
 def serialize_data(
@@ -1310,3 +1340,51 @@ def deserialize_data(
     ctypes_type = data_type.ctypes_type._type_  # type: ignore
     st = struct.Struct(f"{endian}{length}{ctypes_type}")
     return st.size, st.unpack(data)
+
+
+def deserialize_data_by_symbol_entry(
+    info: AdsSymbolEntry,
+    data: bytes,
+    *,
+    endian="<",
+    string_encoding: str = constants.ADS_ASYNC_STRING_ENCODING,
+) -> typing.Tuple[int, typing.Any]:
+    """
+    Deserialize symbol data from the wire, given AdsSymbolEntry information.
+
+    Parameters
+    ----------
+    info : AdsSymbolEntry
+        The data type information.
+
+    data : bytes
+        The wire data to deserialize.
+
+    endian: str, optional
+        Endianness of the stored data.  Defaults to little-endian.
+
+    Returns
+    -------
+    bytes_consumed : int
+        Number of bytes consumed.
+
+    value :
+        The deserialized value.
+    """
+    ctypes_type = info.data_type.ctypes_type
+    _, data = deserialize_data(
+        data_type=info.data_type,
+        length=info.size // ctypes.sizeof(ctypes_type),
+        data=memoryview(data)[: info.size],
+    )
+
+    if info.data_type == constants.AdsDataType.STRING:
+        try:
+            data = b"".join(data)
+            data = data[: data.index(0)]
+            return str(data, string_encoding)
+        except ValueError:
+            # Fall through
+            ...
+
+    return data

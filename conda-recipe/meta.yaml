@@ -1,12 +1,8 @@
-
 {% set data = load_setup_py_data() %}
-
 
 package:
     name    : ads_async
-
     version : {{ data.get('version') }}
-
 
 source:
     path: ..
@@ -19,14 +15,12 @@ requirements:
     build:
       - python >=3.6
       - setuptools
-
     run:
       - python >=3.6
 
 test:
     imports:
       - ads_async
-
     requires:
       - pytest
 

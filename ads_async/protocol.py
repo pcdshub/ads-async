@@ -109,7 +109,18 @@ def from_wire(
                 # if hasattr(cmd_cls, 'deserialize'):
                 # TODO: can't call super.from_buffer in a subclass
                 # classmethod?
-                cmd = cmd_cls.deserialize(view)
+                try:
+                    cmd = cmd_cls.deserialize(view)
+                except Exception as ex:
+                    logger.exception(
+                        "Deserialization of %s failed: %s bytes=%s (length=%d); "
+                        "this may be fatal.",
+                        cmd_cls,
+                        ex,
+                        bytes(view),
+                        len(bytes(view)),
+                    )
+                    continue
 
             item = (aoe_header, cmd)
 
@@ -338,7 +349,7 @@ class _Connection:
 
     @our_net_id.setter
     def our_net_id(self, our_net_id: str):
-        our_net_id = our_net_id or ("not_yet_set", 0)
+        our_net_id = our_net_id or "not_yet_set"
         self._our_net_id = str(our_net_id)
         self._log_tags["our_net_id"] = self._our_net_id
 

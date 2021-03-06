@@ -1,7 +1,6 @@
 import asyncio
 import collections
 import contextvars
-import ctypes
 import ipaddress
 import typing
 from typing import Optional
@@ -65,11 +64,24 @@ class Notification(utils.CallbackHandler):
         async def iter_callback(sub, header, timestamp, sample):
             await queue.async_put((header, timestamp, sample))
 
+        error_task = asyncio.create_task(
+            # TODO
+            self.owner.connection._disconnect_event.wait()
+        )
         sid = self.add_callback(iter_callback)
         try:
             while True:
-                item = await queue.async_get()
-                yield item
+                get_task = asyncio.create_task(queue.async_get())
+                done, _ = await asyncio.wait(
+                    {get_task, error_task},
+                    return_when=asyncio.FIRST_COMPLETED,
+                )
+                if error_task in done:
+                    # TODO optionally can wait for reconnection, but only
+                    # if notification is checked and re-added if necessary
+                    # for scenarios when the PLC reboots
+                    raise exceptions.DisconnectedError("Disconnected")
+                yield get_task.result()
         finally:
             await self.remove_callback(sid)
 
@@ -180,11 +192,12 @@ class _BlockingRequest:
     response: Optional[structs.T_AdsStructure]
     options: dict
 
-    def __init__(self, owner, request, **options):
+    def __init__(self, owner, request, error_event, **options):
         self.owner = owner
         self.request = request
         self.options = options
         self._event = asyncio.Event()
+        self._error_event = error_event
         self.header = None
         self.response = None
 
@@ -204,8 +217,18 @@ class _BlockingRequest:
         self.response = response
         self._event.set()
 
-    async def wait(self):
-        await self._event.wait()
+    async def wait(self, timeout=2.0):
+        error_task = asyncio.create_task(self._error_event.wait())
+        done, _ = await asyncio.wait(
+            {self._event.wait(), error_task},
+            return_when=asyncio.FIRST_COMPLETED,
+            timeout=timeout,
+        )
+        if not done:
+            raise TimeoutError(f"Response not received in {timeout} seconds")
+        if error_task in done:
+            raise exceptions.DisconnectedError("Disconnected")
+        return self.response
 
 
 class Symbol:
@@ -278,24 +301,53 @@ class Symbol:
             size=self.info.size,
         )
 
-        # TODO: move this handling up
-        ctypes_type = self.info.data_type.ctypes_type
-        _, data = structs.deserialize_data(
-            data_type=self.info.data_type,
-            length=self.info.size // ctypes.sizeof(ctypes_type),
+        return structs.deserialize_data_by_symbol_entry(
+            self.info,
             data=response.data,
+            string_encoding=self.string_encoding,
         )
 
-        if self.info.data_type == constants.AdsDataType.STRING:
-            try:
-                data = b"".join(data)
-                data = data[: data.index(0)]
-                return str(data, self.string_encoding)
-            except ValueError:
-                # Fall through
-                ...
+    async def add_notification(
+        self,
+        length: int = 1000,
+        mode: AdsTransmissionMode = AdsTransmissionMode.SERVERCYCLE,
+        max_delay: int = 1,
+        cycle_time: int = 100,
+    ) -> Notification:
+        """
+        Add an advanced notification by way of index group/offset.
 
-        return data
+        Parameters
+        -----------
+        length : int
+            Maximum length of each notification, in bytes.
+
+        mode : AdsTransmissionMode
+            Specifies if the event should be fired cyclically or only if the
+            variable has changed.
+
+        max_delay : int
+            The event is fired at *latest* when this time has elapsed. [ms]
+
+        cycle_time : int
+            The ADS server checks whether the variable has changed after this
+            time interval. [ms]
+
+        port : AmsPort, optional
+            Port to request notifications from.  Defaults to the current target
+            port.
+        """
+        if not self.is_initialized:
+            # TODO: ``add_notification`` API inconsistent due to ``initialize``:
+            await self.initialize()
+        return self.owner.add_notification_by_index(
+            self.index_group,
+            self.index_offset,
+            length=length,
+            mode=mode,
+            max_delay=max_delay,
+            cycle_time=cycle_time,
+        )
 
 
 class AsyncioClientCircuit:
@@ -496,12 +548,15 @@ class AsyncioClientCircuit:
             The port to send the item to.
         """
         port = port or self.default_port
-        async with _BlockingRequest(self, item, port=port) as req:
+        async with _BlockingRequest(
+            self, item, port=port, error_event=self.connection._disconnect_event
+        ) as req:
             await req.wait()
-        result = getattr(req, "result", None)
+        result = getattr(req.response, "result", None)
         if result is not None and result != constants.AdsError.NOERR:
+            error_code = getattr(result, "name", result)
             raise exceptions.RequestFailedError(
-                f"Request {item} failed with {result}",
+                f"Request {item} failed with {error_code}",
                 code=result,
                 request=req,
             )
@@ -657,6 +712,7 @@ class AsyncioClientConnection:
         their_address: typing.Tuple[str, int],
         our_net_id: Optional[str] = None,  # can be determined later
         reconnect_rate: Optional[int] = 10,
+        request_timeout: float = 2.0,
     ):
         self.connection = protocol.ClientConnection(
             their_address=their_address,
@@ -671,6 +727,8 @@ class AsyncioClientConnection:
         self.user_callback_executor = utils.CallbackExecutor(self.log)
         self.reconnect_rate = reconnect_rate
         self._connect_event = asyncio.Event()
+        self._disconnect_event = asyncio.Event()
+        self.request_timeout = request_timeout
         self._circuits = {}
 
     async def __aenter__(self):
@@ -707,7 +765,7 @@ class AsyncioClientConnection:
         self._circuits[net_id] = circuit
         return circuit
 
-    def _circuit_cleanup(self, net_id):
+    async def _circuit_cleanup(self, net_id):
         try:
             _ = self._circuits.pop(net_id)
         except KeyError:
@@ -740,6 +798,7 @@ class AsyncioClientConnection:
                 )
             except OSError:
                 self.log.exception("Failed to connect")
+                self._disconnect_event.set()
             else:
                 await self._connected_loop()
 
@@ -766,6 +825,7 @@ class AsyncioClientConnection:
                 "Auto-configuring local net ID: %s", self.connection.our_net_id
             )
 
+        self._disconnect_event.clear()
         self._connect_event.set()
         while True:
             data = await self.reader.read(1024)
@@ -773,6 +833,7 @@ class AsyncioClientConnection:
                 self.connection.disconnected()
                 self.log.debug("Disconnected")
                 self._connect_event.clear()
+                self._disconnect_event.set()
                 break
 
             for header, item in self.connection.received_data(data):

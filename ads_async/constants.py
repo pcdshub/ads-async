@@ -1,6 +1,7 @@
 import ctypes
 import enum
 import os
+import socket
 import typing
 
 ADS_TCP_SERVER_PORT = 0xBF02  # 48898
@@ -10,6 +11,18 @@ SYSTEM_SERVICE_PORT = 0x2710  # 10000
 
 ADS_ASYNC_STRING_ENCODING = os.environ.get("ADS_ASYNC_STRING_ENCODING", "utf-8")
 # TODO: some scenarios where ADS data can be big endian?
+
+try:
+    IP_FROM_HOST = socket.gethostbyname(socket.gethostname())
+except OSError:
+    IP_FROM_HOST = "127.0.0.1"
+
+ADS_ASYNC_LOCAL_IP = os.environ.get("ADS_ASYNC_LOCAL_IP", IP_FROM_HOST)
+ADS_ASYNC_LOCAL_NET_ID = os.environ.get(
+    "ADS_ASYNC_LOCAL_NET_ID", f"{IP_FROM_HOST}.1.1" if IP_FROM_HOST else ""
+)
+ADS_ASYNC_USERNAME = os.environ.get("ADS_ASYNC_USERNAME", "Administrator")
+ADS_ASYNC_PASSWORD = os.environ.get("ADS_ASYNC_PASSWORD", "1")
 
 
 class Role(str, enum.Enum):
@@ -332,6 +345,19 @@ class AdsError(enum.IntEnum):
     CLIENT_SYNCRESINVALID = 0x54 + ERR_ADSERRS
     # sync port is locked
     CLIENT_SYNCPORTLOCKED = 0x55 + ERR_ADSERRS
+
+    @classmethod
+    def _missing_(cls, value):
+        if not 0 <= value <= 0xFFFF:
+            return None
+
+        try:
+            return cls._value2member_map_[value]
+        except KeyError:
+            member = int.__new__(cls, value)
+            member._name_ = f"{value}"
+            member._value_ = value
+            return cls._value2member_map_.setdefault(value, member)
 
 
 class AdsDataType(enum.IntEnum):
