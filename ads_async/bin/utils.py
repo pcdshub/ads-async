@@ -94,7 +94,7 @@ def send_and_receive_service_udp(
     for recv in _send_and_receive_udp(plc_hostname, to_send, timeout=timeout):
         if isinstance(recv, TimeoutError):
             if valid_responses == 0:
-                logger.warning("Timed out waiting for responses")
+                logger.debug("Timed out waiting for responses")
             break
         try:
             packet, addr = recv
