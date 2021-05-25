@@ -34,7 +34,7 @@ def _build_commands():
             unavailable.append((module, ex))
         else:
             result[module] = (mod.build_arg_parser, mod.main)
-            DESCRIPTION += f"\n    $ ads {module} --help"
+            DESCRIPTION += f"\n    $ ads-async {module} --help"
 
     if unavailable:
         DESCRIPTION += "\n\n"
@@ -53,7 +53,7 @@ COMMANDS = _build_commands()
 
 def main():
     top_parser = argparse.ArgumentParser(
-        prog="ads",
+        prog="ads-async",
         description=DESCRIPTION,
         formatter_class=argparse.RawTextHelpFormatter,
     )
