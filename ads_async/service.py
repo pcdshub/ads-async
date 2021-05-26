@@ -225,8 +225,8 @@ class SystemService:
                 b"\x05\x00",
                 # Block of unknown
                 b"\x00\x00\x0c\x00",
-                # Sender host name
-                serialize_string(source_name, self.string_encoding),
+                # The route name to add:
+                serialize_string(route_name, self.string_encoding),
                 # Block of unknown
                 b"\x07\x00",
                 # Byte length of AMS ID (6 octets)
@@ -243,8 +243,8 @@ class SystemService:
                 serialize_string(password, self.string_encoding),
                 # Block of unknown
                 struct.pack(">2s", b"\x05\x00"),
-                # Route name
-                serialize_string(route_name, self.string_encoding),
+                # Source (IP) address
+                serialize_string(source_name, self.string_encoding),
             )
         )
 
