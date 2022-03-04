@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import ctypes
 import enum
 import functools
@@ -484,7 +486,7 @@ class AdsNotificationLogMessage(_AdsStructBase):
     @classmethod
     def deserialize(
         cls: typing.Type[T_AdsStructure], buf: typing.Union[memoryview, bytearray]
-    ) -> "AdsNotificationLogMessage":
+    ) -> AdsNotificationLogMessage:
         """Deserialize a log message."""
         # message_length is not reliable when nearing 255+ characters!
         new_struct = cls.from_buffer(buf)
@@ -862,7 +864,7 @@ class AdsReadWriteRequest(_AdsStructBase):
     _dict_mapping = {"_index_group": "index_group"}
 
     @classmethod
-    def create_handle_by_name_request(cls, name: str) -> "AdsReadWriteRequest":
+    def create_handle_by_name_request(cls, name: str) -> AdsReadWriteRequest:
         data = string_to_byte_string(name) + b"\x00"
         request = cls(
             constants.AdsIndexGroup.SYM_HNDBYNAME,
@@ -874,7 +876,7 @@ class AdsReadWriteRequest(_AdsStructBase):
         return request
 
     @classmethod
-    def create_info_by_name_request(cls, name: str) -> "AdsReadWriteRequest":
+    def create_info_by_name_request(cls, name: str) -> AdsReadWriteRequest:
         # Read length includes up to 3 T_MaxString strings:
         read_length = ctypes.sizeof(AdsSymbolEntry) + 3 * 256
 
@@ -939,7 +941,7 @@ class AoERequestHeader(_AdsStructBase):
     @classmethod
     def from_sdo(
         cls, sdo_index: int, sdo_sub_index: int, data_length: int
-    ) -> "AoERequestHeader":
+    ) -> AoERequestHeader:
         """
         Create an AoERequestHeader given SDO settings.
 
@@ -1077,7 +1079,7 @@ class AoEHeader(_AdsStructBase):
         *,
         state_flags: constants.AoEHeaderFlag = AoEHeaderFlag.ADS_COMMAND,
         error_code: int = 0,
-    ) -> "AoEHeader":
+    ) -> AoEHeader:
         """Create a request header."""
         return cls(
             target, source, command_id, state_flags, length, error_code, invoke_id
@@ -1096,7 +1098,7 @@ class AoEHeader(_AdsStructBase):
             AoEHeaderFlag.ADS_COMMAND | AoEHeaderFlag.RESPONSE
         ),
         error_code: int = 0,
-    ) -> "AoEHeader":
+    ) -> AoEHeader:
         """Create a response header."""
         return cls(
             target, source, command_id, state_flags, length, error_code, invoke_id
@@ -1157,7 +1159,7 @@ class AoEReadResponse(AoEResponseHeader):
 
     def upcast_by_index_group(
         self, index_group: constants.AdsIndexGroup
-    ) -> "AoEHandleResponse":
+    ) -> AoEHandleResponse:
         """
         Cast the data payload into an appropriate structure.
 
@@ -1178,7 +1180,7 @@ class AoEReadResponse(AoEResponseHeader):
             )
         return self
 
-    def as_handle_response(self) -> "AoEHandleResponse":
+    def as_handle_response(self) -> AoEHandleResponse:
         return AoEHandleResponse.deserialize(self._buffer)
 
 

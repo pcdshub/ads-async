@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import copy
 import ctypes
 import inspect
@@ -306,7 +308,7 @@ class _Connection:
     _our_address: IPPort
     _our_net_id: str
     circuit_class: type
-    circuits: Dict[str, "_Circuit"]
+    circuits: Dict[str, _Circuit]
     recv_buffer: bytearray
     role: Role
     their_address: IPPort
@@ -372,7 +374,7 @@ class _Connection:
             self.recv_buffer = self.recv_buffer[consumed:]
             yield item
 
-    def get_circuit(self, net_id: Union[AmsNetId, str]) -> "_Circuit":
+    def get_circuit(self, net_id: Union[AmsNetId, str]) -> _Circuit:
         """Get a circuit for (their) Net ID."""
         if isinstance(net_id, AmsNetId):
             net_id = repr(net_id)

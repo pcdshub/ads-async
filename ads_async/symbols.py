@@ -391,7 +391,7 @@ class TmcTypes(enum.Enum):
     ITComObjectServer = AdsDataType.UINT64  # TODO: 32 on 32-bit machines...
 
 
-class DataAreaIndexGroup(enum.Enum):
+class DataAreaIndexGroup(enum.IntEnum):
     # <AreaNo AreaType="Internal" CreateSymbols="true">3</AreaNo>
     # e.g., Global_Version.stLibVersion_Tc2_System
     Internal = constants.AdsIndexGroup.PLC_DATA_AREA  # 0x4040
