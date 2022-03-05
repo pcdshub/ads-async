@@ -5,6 +5,7 @@ import math
 import sys
 import textwrap
 import typing
+from typing import Optional
 
 from . import constants, log, structs
 from .constants import AdsDataType
@@ -85,9 +86,10 @@ class Symbol:
         data_type: constants.AdsDataType,
         array_length: int,
         data_area: "DataArea",
-        type_name: str = None,
-        bit_offset: int = None,
+        type_name: Optional[str] = None,
+        bit_offset: Optional[int] = None,
         pointer: bool = False,
+        comment: Optional[str] = None,
     ):
         self.array_length = array_length
         self.data_area = data_area
@@ -97,6 +99,7 @@ class Symbol:
         self.offset = offset
         self.bit_offset = bit_offset
         self.pointer = pointer  # TODO: only depth of 1
+        self.comment = comment or ""
         self.log = log.ComposableLogAdapter(
             module_logger,
             extra=dict(
@@ -231,9 +234,8 @@ def tmc_to_symbols(
             bit_offset=bit_offset_obj,
             pointer=pointer,
             type_name=data_type.name,
+            comment=(item.Comment[0].text if hasattr(item, "Comment") else ""),
         )
-        if hasattr(item, "Comment"):
-            symbol.__doc__ = item.Comment[0].text
 
         yield symbol
     else:
@@ -391,7 +393,7 @@ class TmcTypes(enum.Enum):
     ITComObjectServer = AdsDataType.UINT64  # TODO: 32 on 32-bit machines...
 
 
-class DataAreaIndexGroup(enum.Enum):
+class DataAreaIndexGroup(enum.IntEnum):
     # <AreaNo AreaType="Internal" CreateSymbols="true">3</AreaNo>
     # e.g., Global_Version.stLibVersion_Tc2_System
     Internal = constants.AdsIndexGroup.PLC_DATA_AREA  # 0x4040
@@ -486,6 +488,50 @@ class TmcDatabase(Database):
         self.add_data_area(
             index_group, DataArea(index_group, "PLC_MEMORY_AREA", memory_size=100_000)
         )
+
+
+class SimpleDatabase(Database):
+    _last_symbol: Optional[Symbol]
+
+    def __init__(self, memory_size=16_000_000):
+        super().__init__()
+
+        self.data_area = DataArea(
+            index_group=constants.AdsIndexGroup.PLC_DATA_AREA,
+            area_type="dynamic",
+            memory_size=memory_size,
+        )
+        self.index_groups = {
+            constants.AdsIndexGroup.PLC_DATA_AREA: self.data_area,
+        }
+        self._last_symbol = None
+
+    def add_basic_symbol(
+        self,
+        name: str,
+        data_type: AdsDataType,
+        array_length: int = 1,
+        comment: Optional[str] = None,
+    ) -> BasicSymbol:
+        """Add a basic (non-struct) symbol."""
+        if self._last_symbol is None:
+            offset = 1000
+        else:
+            offset = self._last_symbol.memory_range[1] + 1
+
+        sym = BasicSymbol(
+            name=name,
+            offset=offset,
+            data_type=data_type,
+            data_area=self.data_area,
+            array_length=array_length,
+            comment=comment,
+        )
+        self.data_area.symbols[name] = sym
+        return sym
+
+    def get_symbol_by_name(self, symbol_name: str) -> Symbol:
+        return self.data_area.symbols[symbol_name]
 
 
 def map_symbols_in_memory(
