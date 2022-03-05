@@ -1324,7 +1324,7 @@ class ServerCircuit(_Circuit):
             flags=constants.AdsSymbolFlag(0),  # TODO symbol.flags
             name=symbol.name,
             type_name=symbol.data_type_name,
-            comment=symbol.__doc__ or "",
+            comment=symbol.comment or "",
         )
         return [structs.AoEReadResponse(data=symbol_entry)]
 
