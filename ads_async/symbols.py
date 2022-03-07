@@ -5,7 +5,7 @@ import math
 import sys
 import textwrap
 import typing
-from typing import Optional
+from typing import Optional, Type
 
 from . import constants, log, structs
 from .constants import AdsDataType
@@ -305,9 +305,40 @@ class BasicSymbol(Symbol):
 
 
 class ComplexSymbol(Symbol):
-    def __init__(self, *, struct_size: int, **kwargs):
+    def __init__(
+        self,
+        *,
+        struct_size: Optional[int] = None,
+        data_type: AdsDataType = AdsDataType.BIGTYPE,
+        cls: Optional[Type[ctypes.Structure]] = None,
+        **kwargs,
+    ):
+        if struct_size is None:
+            if cls is not None:
+                struct_size = ctypes.sizeof(cls)
+            else:
+                raise ValueError("Must specify structure class or byte size")
+
+        self.data_cls = cls
         self._struct_size = struct_size
-        super().__init__(**kwargs)
+        super().__init__(data_type=data_type, **kwargs)
+
+    def write(self, value):
+        if self.data_cls is not None and isinstance(value, self.data_cls):
+            byte_value = bytes(value)
+            self.log.debug("Symbol %s write %s (%s)", self, value, byte_value)
+            if self.bit_offset is not None:
+                return self.memory.write_bits(
+                    self.offset,
+                    self.bit_offset.offset,
+                    self.bit_offset.size,
+                    byte_value,
+                )
+
+            offset = self.offset if not self.pointer else self._dereference_pointer()
+            return self.memory.write(offset, byte_value)
+
+        return super().write(value)
 
     def _configure_data_type(self):
         self.byte_size = self._struct_size * self.array_length
@@ -492,10 +523,12 @@ class TmcDatabase(Database):
 
 class SimpleDatabase(Database):
     _last_symbol: Optional[Symbol]
+    initial_offset: int
 
-    def __init__(self, memory_size=16_000_000):
+    def __init__(self, memory_size: int = 16_000_000, initial_offset: int = 1000):
         super().__init__()
 
+        self.initial_offset = initial_offset
         self.data_area = DataArea(
             index_group=constants.AdsIndexGroup.PLC_DATA_AREA,
             area_type="dynamic",
@@ -506,6 +539,13 @@ class SimpleDatabase(Database):
         }
         self._last_symbol = None
 
+    @property
+    def next_offset(self) -> int:
+        """The next memory offset to use for a new symbol."""
+        if self._last_symbol is None:
+            return self.initial_offset
+        return self._last_symbol.memory_range[1] + 1
+
     def add_basic_symbol(
         self,
         name: str,
@@ -514,18 +554,33 @@ class SimpleDatabase(Database):
         comment: Optional[str] = None,
     ) -> BasicSymbol:
         """Add a basic (non-struct) symbol."""
-        if self._last_symbol is None:
-            offset = 1000
-        else:
-            offset = self._last_symbol.memory_range[1] + 1
-
         sym = BasicSymbol(
             name=name,
-            offset=offset,
+            offset=self.next_offset,
             data_type=data_type,
             data_area=self.data_area,
             array_length=array_length,
             comment=comment,
+        )
+        self.data_area.symbols[name] = sym
+        return sym
+
+    def add_complex_symbol(
+        self,
+        name: str,
+        cls: Type[ctypes.LittleEndianStructure],
+        array_length: int = 1,
+        comment: Optional[str] = None,
+    ) -> ComplexSymbol:
+        """Add a complex (structured) symbol."""
+        sym = ComplexSymbol(
+            name=name,
+            offset=self.next_offset,
+            data_area=self.data_area,
+            struct_size=ctypes.sizeof(cls),
+            cls=cls,
+            array_length=array_length,
+            comment=comment or f"{cls.__module__}.{cls.__name__} instance",
         )
         self.data_area.symbols[name] = sym
         return sym
