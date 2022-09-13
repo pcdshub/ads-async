@@ -45,6 +45,7 @@ class AmsPort(enum.IntEnum):
     R0_PLC_RTS3 = 821
     R0_PLC_RTS4 = 831
     R0_PLC_TC3 = 851
+    R3_SYSSERV = 10000
 
 
 class AdsCommandId(enum.IntEnum):
@@ -454,3 +455,8 @@ class AdsSymbolFlag(enum.IntFlag):
 
 
 SDO_UPLOAD = 0xF302
+
+
+class DownloadPath(str, enum.Enum):
+    boot = "boot"
+    target = "target"

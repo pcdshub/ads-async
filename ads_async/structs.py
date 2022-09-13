@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import ctypes
+import datetime
 import enum
 import functools
 import ipaddress
@@ -1271,6 +1272,112 @@ class AdsDeviceInfo(AoEResponseHeader):
             # Empty response is possible if there's no project loaded
             buf.extend(b"\x00" * (ctypes.sizeof(AdsDeviceInfo) - len(buf)))
         return super().deserialize(buf)
+
+
+class AdsFileStat(ctypes.LittleEndianStructure):
+    """
+    File stat information for a file over the service port.
+
+    Reference:
+    https://docs.microsoft.com/en-us/previous-versions/windows/embedded/aa513350(v=msdn.10)
+    """
+
+    _pack_ = 1
+
+    _fields_ = [
+        ("attributes", ctypes.c_uint64),
+        ("_create_timestamp", ctypes.c_uint64),
+        ("_access_timestamp", ctypes.c_uint64),
+        ("_last_write_timestamp", ctypes.c_uint64),
+        ("_unknown1", ctypes.c_uint32),  # could be file size high
+    ]
+
+    _dict_attrs = [
+        "attributes",
+        "create_timestamp",
+        "access_timestamp",
+        "last_write_timestamp",
+    ]
+
+    @property
+    def create_timestamp(self) -> datetime.datetime:
+        return utils.get_datetime_from_timestamp(self._create_timestamp)
+
+    @property
+    def access_timestamp(self) -> datetime.datetime:
+        return utils.get_datetime_from_timestamp(self._access_timestamp)
+
+    @property
+    def last_write_timestamp(self) -> datetime.datetime:
+        return utils.get_datetime_from_timestamp(self._last_write_timestamp)
+
+    def to_dict(self) -> dict:
+        """Return the structure as a dictionary."""
+        # Raw values can be retargeted to properties by way of _dict_mapping:
+        #  {'raw_attr': 'property_attr'}
+        return {attr: getattr(self, attr) for attr in self._dict_attrs}
+
+    def __repr__(self):
+        formatted_args = ", ".join(f"{k!s}={v}" for k, v in self.to_dict().items())
+        return f"{self.__class__.__name__}({formatted_args})"
+
+
+class AdsMatchingFileInformation(ctypes.LittleEndianStructure):
+    """
+    File listing information over the service port.
+
+    See also: :class:`AdsFileStat`.
+
+    Reference:
+    https://docs.microsoft.com/en-us/previous-versions/windows/embedded/aa513350(v=msdn.10)
+    """
+
+    _pack_ = 1
+
+    _fields_ = [
+        ("stat", AdsFileStat),
+        ("file_size", ctypes.c_uint32),
+        ("_unknown1", ctypes.c_uint32),
+        ("_unknown2", ctypes.c_uint32),
+        ("_filename", ctypes.c_ubyte * 128),  # MAX_PATH=128
+        # may be padding, may be other files?
+        ("_maybe_padding", ctypes.c_ubyte * 148),
+    ]
+
+    _dict_attrs = [
+        "stat",
+        "file_size",
+        "filename",
+    ]
+
+    @property
+    def create_timestamp(self) -> datetime.datetime:
+        return utils.get_datetime_from_timestamp(self._create_timestamp)
+
+    @property
+    def access_timestamp(self) -> datetime.datetime:
+        return utils.get_datetime_from_timestamp(self._access_timestamp)
+
+    @property
+    def last_write_timestamp(self) -> datetime.datetime:
+        return utils.get_datetime_from_timestamp(self._last_write_timestamp)
+
+    @property
+    def filename(self) -> bytes:
+        res = bytes(self._filename)
+        if b"\x00" in res:
+            return res.split(b"\x00", 1)[0]
+        return res
+
+    def to_dict(self) -> dict:
+        """Return the structure as a dictionary."""
+        # Raw values can be retargeted to properties by way of _dict_mapping:
+        #  {'raw_attr': 'property_attr'}
+        return {attr: getattr(self, attr) for attr in self._dict_attrs}
+
+    def __repr__(self):
+        formatted_args = ", ".join(f"{k!s}={v}" for k, v in self.to_dict().items())
+        return f"{self.__class__.__name__}({formatted_args})"
 
 
 def serialize_data(

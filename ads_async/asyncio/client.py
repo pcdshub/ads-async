@@ -1,6 +1,7 @@
 import asyncio
 import collections
 import contextvars
+import ctypes
 import ipaddress
 import typing
 from typing import Optional
@@ -683,6 +684,126 @@ class AsyncioClientCircuit:
         for source, handle in self.circuit.unknown_notifications:
             _, port = source
             await self.send(self.circuit.remove_notification(handle), port=port)
+
+    async def get_file(
+        self,
+        filename: str,
+        encoding: str = constants.ADS_ASYNC_STRING_ENCODING,
+        buffer_size: int = 16384,
+    ) -> bytes:
+        """
+        Download a file from the PLC.
+
+        Parameters
+        ----------
+        filename : str
+            The filename, the start which should be either "boot/" or "target/".
+        directory : DownloadPath
+            The path to download from (/Hard Drive/TwinCAT/3.1/...)
+
+        Returns
+        -------
+        data : bytes
+            The contents of the file.
+
+        Raises
+        ------
+        RequestFailedError
+            With DEVICE_NOTFOUND if the file is not found
+        AdsAsyncException
+            If the download doesn't proceed as expected
+        """
+        try:
+            directory, filename = filename.split("/", 1)
+            path = constants.DownloadPath[directory.lower()]
+        except Exception:
+            raise ValueError(
+                f"The filename should start with boot/ or target/. " f"Got: {filename}"
+            )
+
+        if path in (constants.DownloadPath.boot,):
+            file_info = await self.get_file_stat(
+                filename, directory=path, encoding=encoding
+            )
+            self.log.info("Downloading %s: %s", filename, file_info)
+        else:
+            self.log.info("Downloading %s", filename)
+
+        request = self.circuit.request_file_download(
+            filename=filename.encode(encoding), directory=path
+        )
+        res = await self.write_and_read(request, port=AmsPort.R3_SYSSERV)
+        if res is None:
+            raise exceptions.AdsAsyncException(
+                "Unable to get a handle for downloading the file"
+            )
+
+        handle = ctypes.c_uint32.from_buffer_copy(res.data).value
+        read_request = self.circuit.index_group_read_write_request(
+            index_group=122,
+            index_offset=handle,
+            data=b"",
+            read_length=buffer_size,
+        )
+        clear_request = self.circuit.index_group_read_write_request(
+            index_group=123,
+            index_offset=handle,
+            data=b"",
+            read_length=buffer_size,
+        )
+        buffer = []
+        try:
+            while True:
+                res = await self.write_and_read(read_request, port=AmsPort.R3_SYSSERV)
+                if res is None:
+                    raise exceptions.AdsAsyncException("Download interrupted?")
+                buffer.append(res.data)
+                if len(res.data) < buffer_size:
+                    break
+        finally:
+            await self.write_and_read(clear_request, port=AmsPort.R3_SYSSERV)
+
+        return b"".join(buffer)
+
+    async def get_file_stat(
+        self,
+        filename: str,
+        directory: constants.DownloadPath = constants.DownloadPath.boot,
+        encoding: str = constants.ADS_ASYNC_STRING_ENCODING,
+    ) -> structs.AdsFileStat:
+        """Get file information from the PLC."""
+        request = self.circuit.get_file_stat(
+            filename=filename.encode(encoding), directory=directory
+        )
+        res = await self.write_and_read(request, port=AmsPort.R3_SYSSERV)
+        if res is None:
+            raise exceptions.RequestFailedError(
+                "File not found or service not enabled?",
+                code=constants.AdsError.NOERR,
+                request=request,
+            )
+
+        return structs.AdsFileStat.from_buffer_copy(res.data)
+
+    async def get_matching_file_info(
+        self,
+        pattern: str,
+        directory: constants.DownloadPath = constants.DownloadPath.boot,
+        encoding: str = constants.ADS_ASYNC_STRING_ENCODING,
+    ) -> structs.AdsFileStat:
+        """Get file information from the PLC."""
+        request = self.circuit.get_matching_file_info(
+            pattern=pattern.encode(encoding), directory=directory
+        )
+        res = await self.write_and_read(request, port=AmsPort.R3_SYSSERV)
+        if res is None:
+            raise exceptions.RequestFailedError(
+                "File not found or service not enabled?",
+                code=constants.AdsError.NOERR,
+                request=request,
+            )
+
+        return structs.AdsMatchingFileInformation.from_buffer_copy(res.data)
 
 
 class AsyncioClientConnection:
