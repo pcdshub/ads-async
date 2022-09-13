@@ -101,7 +101,7 @@ def main():
         func = kwargs.pop("func")
         logger.debug("%s(**%r)", func.__name__, kwargs)
         if inspect.iscoroutinefunction(func):
-            asyncio.run(func(*args, **kwargs))
+            asyncio.run(func(**kwargs))
         else:
             func(**kwargs)
     else:
