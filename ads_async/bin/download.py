@@ -82,7 +82,6 @@ async def async_download(
     plc_hostname: str,
     filenames: List[str],
     our_net_id: str,
-    save_to: str = ".",
     plc_net_id: Optional[str] = None,
     timeout: float = 2.0,
     add_route: bool = False,
@@ -137,7 +136,6 @@ def main(
         async_download(
             host,
             filenames,
-            save_to=save_to,
             plc_net_id=net_id,
             our_net_id=our_net_id,
             add_route=add_route,
