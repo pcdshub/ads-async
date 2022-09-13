@@ -5,8 +5,9 @@ import collections
 import contextvars
 import ctypes
 import ipaddress
+import os
 import typing
-from typing import Optional
+from typing import Dict, Optional
 
 from .. import constants, exceptions, protocol, structs
 from ..constants import AdsTransmissionMode, AmsPort
@@ -686,6 +687,36 @@ class AsyncioClientCircuit:
         for source, handle in self.circuit.unknown_notifications:
             _, port = source
             await self.send(self.circuit.remove_notification(handle), port=port)
+
+    async def download_current_config_file(
+        self,
+        buffer_size: int = 16384,
+    ) -> utils.InMemoryZipFile:
+        """Download the current configuration (CurrentConfig.tszip)."""
+        current_config = await self.get_file(
+            "boot/CurrentConfig.tszip", buffer_size=buffer_size
+        )
+        return utils.InMemoryZipFile(current_config)
+
+    async def download_projects(
+        self,
+        buffer_size: int = 16384,
+    ) -> Dict[str, utils.InMemoryZipFile]:
+        """Download the active project."""
+        current_config = await self.download_current_config_file(
+            buffer_size=buffer_size
+        )
+        projects = {}
+        for fn in current_config.zip.filelist:
+            if fn.filename.startswith("_Config/PLC/"):
+                project_name, _ = os.path.splitext(os.path.basename(fn.filename))
+                tpzip_filename = f"{project_name}.tpzip"
+                projects[tpzip_filename] = utils.InMemoryZipFile(
+                    await self.get_file(
+                        f"boot/CurrentConfig\\{tpzip_filename}", buffer_size=buffer_size
+                    )
+                )
+        return projects
 
     async def get_file(
         self,

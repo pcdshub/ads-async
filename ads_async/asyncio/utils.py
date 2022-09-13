@@ -1,9 +1,13 @@
+from __future__ import annotations
+
 import asyncio
 import functools
 import inspect
+import io
 import sys
 import threading
 import weakref
+import zipfile
 
 
 class _TaskHandler:
@@ -166,6 +170,22 @@ class CallbackHandler:
         with self.callback_lock:
             for remove_id in to_remove:
                 self.callbacks.pop(remove_id, None)
+
+
+class InMemoryZipFile:
+    def __init__(self, data: bytes, **kwargs):
+        self.buffer = io.BytesIO(data)
+        self.zip = zipfile.ZipFile(self.buffer, **kwargs)
+
+    def close(self):
+        self.zip.close()
+        self.buffer = None
+
+    def __enter__(self) -> InMemoryZipFile:
+        return self
+
+    def __exit__(self, exc_type, exc_value, traceback):
+        self.close()
 
 
 if sys.version_info < (3, 7):

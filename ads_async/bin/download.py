@@ -30,14 +30,23 @@ def build_arg_parser(argparser=None):
         type=str,
         help="PLC hostname or IP address",
     )
-    argparser.add_argument("filenames", type=str, nargs="+", help="File(s) to get")
+    argparser.add_argument(
+        "filenames",
+        type=str,
+        nargs="*",
+        help="File(s) to get",
+    )
     argparser.add_argument(
         "--save-to",
         type=str,
         default=".",
         help="Path to save files to.  Defaults to the working directory.",
     )
-
+    argparser.add_argument(
+        "--project",
+        action="store_true",
+        help="Download the project as well",
+    )
     argparser.add_argument(
         "--stdout",
         action="store_true",
@@ -85,9 +94,10 @@ async def async_download(
     plc_net_id: Optional[str] = None,
     timeout: float = 2.0,
     add_route: bool = False,
+    project: bool = False,
     route_host: str = "",
 ) -> Dict[str, Dict[str, Any]]:
-    """Download files from a PLC."""
+    """Download files and/or projects from a PLC."""
     result = {}
     async with setup_connection(
         plc_hostname,
@@ -117,6 +127,23 @@ async def async_download(
                 "error": error,
             }
 
+        if project:
+            try:
+                projects = await circuit.download_projects()
+            except Exception as ex:
+                result["projects"] = {
+                    "data": None,
+                    "stat": None,
+                    "error": ex,
+                }
+            else:
+                for fn, zipfile in projects.items():
+                    result[fn] = {
+                        "data": zipfile.buffer.getvalue(),
+                        "stat": None,
+                        "error": None,
+                    }
+
     return result
 
 
@@ -130,6 +157,7 @@ def main(
     timeout: float = 2.0,
     add_route: bool = False,
     route_host: Optional[str] = None,
+    project: bool = False,
     stdout: bool = False,
 ):
     result = asyncio.run(
@@ -141,6 +169,7 @@ def main(
             add_route=add_route,
             route_host=our_host,
             timeout=timeout,
+            project=project,
         )
     )
     to_display = {}
