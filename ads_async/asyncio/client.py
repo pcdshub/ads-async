@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import asyncio
 import collections
 import contextvars
@@ -6,7 +8,7 @@ import ipaddress
 import typing
 from typing import Optional
 
-from .. import constants, exceptions, log, protocol, structs
+from .. import constants, exceptions, protocol, structs
 from ..constants import AdsTransmissionMode, AmsPort
 from . import utils
 
@@ -86,7 +88,7 @@ class Notification(utils.CallbackHandler):
         finally:
             await self.remove_callback(sid)
 
-    async def __aenter__(self):
+    async def __aenter__(self) -> Notification:
         return self
 
     async def __aexit__(self, exc_type, exc_value, traceback):
@@ -264,7 +266,7 @@ class Symbol:
         self.handle = None
         self.string_encoding = string_encoding
 
-    async def __aenter__(self):
+    async def __aenter__(self) -> Symbol:
         return self
 
     async def __aexit__(self, exc_type, exc_value, traceback):

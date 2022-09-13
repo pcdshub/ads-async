@@ -3,15 +3,12 @@
 given TwinCAT3 PLC.
 """
 import argparse
-import asyncio
 import json
 import logging
 from typing import List, Optional
 
 from .. import constants
-from ..asyncio.client import Client
-from .info import get_plc_info
-from .route import add_route_to_plc
+from .utils import setup_connection
 
 DESCRIPTION = __doc__
 
@@ -63,7 +60,7 @@ def build_arg_parser(argparser=None):
     return argparser
 
 
-def get_symbols(
+async def get_symbols(
     plc_hostname: str,
     symbols: List[str],
     our_net_id: str,
@@ -91,70 +88,37 @@ def get_symbols(
     symbol_value : any
         Symbol value.
     """
-    if not our_net_id:
-        if route_host and route_host[0].isnumeric():
-            our_net_id = f"{route_host}.1.1"
-    if not route_host and our_net_id:
-        route_host = ".".join(our_net_id.split(".")[:4])
-    if plc_net_id is None:
-        try:
-            plc_info = next(get_plc_info(plc_hostname, timeout=timeout))
-        except (TimeoutError, StopIteration):
-            plc_net_id = f"{plc_hostname}.1.1"
-            module_logger.warning(
-                "Failed to get PLC information through service port; "
-                "falling back to %s as Net ID.",
-                plc_net_id,
-            )
-        else:
-            plc_net_id = plc_info["source_net_id"]
-            module_logger.info(
-                "Got PLC net ID through service port: %s",
-                plc_net_id,
-            )
+    result = {}
+    async with setup_connection(
+        plc_hostname,
+        plc_net_id=plc_net_id,
+        our_net_id=our_net_id,
+        add_route=add_route,
+        route_host=route_host,
+        timeout=timeout,
+    ) as (client, circuit):
+        for symbol_name in symbols:
+            symbol = circuit.get_symbol_by_name(symbol_name)
+            try:
+                result[symbol_name] = await symbol.read()
+            except Exception as ex:
+                if include_exceptions:
+                    result[symbol_name] = f"(Exception) {ex.__class__.__name__} {ex}"
 
-    if add_route:
-        if not len(route_host):
-            raise ValueError("Must specify a route host to add a route")
-        add_route_to_plc(
-            plc_hostname=plc_hostname,
-            source_net_id=our_net_id,
-            source_name=route_host,
-            route_name=route_host,
-        )
-
-    async def main():
-        result = {}
-        async with Client(
-            (plc_hostname, constants.ADS_TCP_SERVER_PORT), our_net_id=our_net_id
-        ) as client:
-            async with client.get_circuit(plc_net_id) as circuit:
-                for symbol_name in symbols:
-                    symbol = circuit.get_symbol_by_name(symbol_name)
-                    try:
-                        result[symbol_name] = await symbol.read()
-                    except Exception as ex:
-                        if include_exceptions:
-                            result[
-                                symbol_name
-                            ] = f"(Exception) {ex.__class__.__name__} {ex}"
-
-        return result
-
-    return asyncio.run(main())
+    return result
 
 
-def main(
-    host,
-    symbols,
-    net_id=None,
-    our_net_id=None,
-    our_host=None,
-    timeout=2.0,
-    add_route=False,
-    route_host=None,
+async def main(
+    host: str,
+    symbols: List[str],
+    net_id: Optional[str] = None,
+    our_net_id: Optional[str] = None,
+    our_host: Optional[str] = None,
+    timeout: float = 2.0,
+    add_route: bool = False,
+    route_host: Optional[str] = None,
 ):
-    result = get_symbols(
+    result = await get_symbols(
         host,
         symbols,
         plc_net_id=net_id,

@@ -4,18 +4,14 @@ TwinCAT3 PLC.
 """
 import argparse
 import asyncio
-import contextlib
 import json
 import logging
 import os
-import socket
 import sys
 from typing import Any, Dict, List, Optional
 
 from .. import constants
-from ..asyncio.client import Client
-from .info import get_plc_info
-from .route import add_route_to_plc
+from .utils import setup_connection
 
 DESCRIPTION = __doc__
 
@@ -80,55 +76,6 @@ def build_arg_parser(argparser=None):
         "--timeout", type=float, default=2.0, help="Timeout for responses"
     )
     return argparser
-
-
-@contextlib.asynccontextmanager
-async def setup_connection(
-    plc_hostname: str,
-    our_net_id: str,
-    plc_net_id: Optional[str] = None,
-    timeout: float = 2.0,
-    add_route: bool = False,
-    route_host: str = "",
-):
-    if not our_net_id:
-        if route_host and route_host[0].isnumeric():
-            our_net_id = f"{route_host}.1.1"
-    if not route_host and our_net_id:
-        route_host = ".".join(our_net_id.split(".")[:4])
-    if plc_net_id is None:
-        try:
-            plc_info = next(get_plc_info(plc_hostname, timeout=timeout))
-        except (TimeoutError, StopIteration):
-            plc_ip = socket.gethostbyname(plc_hostname)
-            plc_net_id = f"{plc_ip}.1.1"
-            module_logger.warning(
-                "Failed to get PLC information through service port; "
-                "falling back to %s as Net ID.",
-                plc_net_id,
-            )
-        else:
-            plc_net_id = plc_info["source_net_id"]
-            module_logger.info(
-                "Got PLC net ID through service port: %s",
-                plc_net_id,
-            )
-
-    if add_route:
-        if not len(route_host):
-            raise ValueError("Must specify a route host to add a route")
-        add_route_to_plc(
-            plc_hostname=plc_hostname,
-            source_net_id=our_net_id,
-            source_name=route_host,
-            route_name=route_host,
-        )
-
-    async with Client(
-        (plc_hostname, constants.ADS_TCP_SERVER_PORT), our_net_id=our_net_id
-    ) as client:
-        async with client.get_circuit(plc_net_id) as circuit:
-            yield client, circuit
 
 
 async def async_download(
