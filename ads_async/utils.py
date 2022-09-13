@@ -12,7 +12,7 @@ class ThreadsafeCounter:
 
     # Borrowed from caproto
 
-    def __init__(self, *, initial_value=-1, dont_clash_with=None, max_count=2 ** 32):
+    def __init__(self, *, initial_value=-1, dont_clash_with=None, max_count=2**32):
         if dont_clash_with is None:
             dont_clash_with = set()
 
