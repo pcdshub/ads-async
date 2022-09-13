@@ -1111,6 +1111,44 @@ class ClientCircuit(_Circuit):
             read_length=ctypes.sizeof(structs.AdsFileStat),
         )
 
+    def clear_file_handle(self, handle: int) -> structs.AdsReadWriteRequest:
+        """
+        Close a file handle used for downloading.
+
+        Note: This is an educated guess.
+
+        Parameters
+        ----------
+        handle : int
+            The previously configured handle from ``request_file_download``.
+        """
+        return self.index_group_read_write_request(
+            index_group=123,
+            index_offset=handle,
+            data=b"",
+            read_length=0,
+        )
+
+    def read_file_contents(
+        self, handle: int, buffer_size: int = 16384
+    ) -> structs.AdsReadWriteRequest:
+        """
+        Create a reusable file content read request.
+
+        Parameters
+        ----------
+        handle : int
+            The previously configured handle from ``request_file_download``.
+        buffer_size : int, optional
+            The buffer size to use for each packet.
+        """
+        return self.index_group_read_write_request(
+            index_group=122,
+            index_offset=handle,
+            data=b"",
+            read_length=buffer_size,
+        )
+
     def get_file_stat(
         self,
         filename: bytes,

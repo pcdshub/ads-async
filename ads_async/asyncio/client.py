@@ -741,18 +741,8 @@ class AsyncioClientCircuit:
             )
 
         handle = ctypes.c_uint32.from_buffer_copy(res.data).value
-        read_request = self.circuit.index_group_read_write_request(
-            index_group=122,
-            index_offset=handle,
-            data=b"",
-            read_length=buffer_size,
-        )
-        clear_request = self.circuit.index_group_read_write_request(
-            index_group=123,
-            index_offset=handle,
-            data=b"",
-            read_length=buffer_size,
-        )
+        read_request = self.circuit.read_file_contents(handle, buffer_size=buffer_size)
+        clear_request = self.circuit.clear_file_handle(handle)
         buffer = []
         try:
             while True:
@@ -792,7 +782,7 @@ class AsyncioClientCircuit:
         pattern: str,
         directory: constants.DownloadPath = constants.DownloadPath.boot,
         encoding: str = constants.ADS_ASYNC_STRING_ENCODING,
-    ) -> structs.AdsFileStat:
+    ) -> structs.AdsMatchingFileInformation:
         """Get file information from the PLC."""
         request = self.circuit.get_matching_file_info(
             pattern=pattern.encode(encoding), directory=directory
