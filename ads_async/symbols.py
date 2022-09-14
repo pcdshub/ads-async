@@ -45,19 +45,19 @@ class PlcMemory:
     def read_bits(self, offset, bit_offset, bit_size) -> bytes:
         # byte_size = math.ceil(bit_size / 8)
         assert bit_size <= 8
-        return (self.memory[offset] >> bit_offset) & ((2 ** bit_size) - 1)
+        return (self.memory[offset] >> bit_offset) & ((2**bit_size) - 1)
 
     def write_bits(self, offset, bit_offset, bit_size, data):
         # Not thread-safe
         assert bit_size <= 8
         read_bits = 8
-        full_mask = (2 ** read_bits) - 1
-        read_bit_mask = ((2 ** bit_size) - 1) << bit_offset
+        full_mask = (2**read_bits) - 1
+        read_bit_mask = ((2**bit_size) - 1) << bit_offset
 
         # clear the value first
         value = self.memory[offset : offset + 1] & (full_mask & ~read_bit_mask)
         # shift and bring in the data
-        value = value | ((data & ((2 ** bit_size) - 1)) << bit_offset)
+        value = value | ((data & ((2**bit_size) - 1)) << bit_offset)
         self.memory[offset : offset + 1] = value
 
 

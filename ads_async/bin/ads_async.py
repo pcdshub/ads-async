@@ -6,7 +6,9 @@ Try::
 """
 
 import argparse
+import asyncio
 import importlib
+import inspect
 import logging
 
 import ads_async
@@ -14,7 +16,13 @@ import ads_async
 DESCRIPTION = __doc__
 
 
-MODULES = ("get", "monitor", "info", "route")
+MODULES = (
+    "download",
+    "get",
+    "info",
+    "monitor",
+    "route",
+)
 
 
 def _try_import(module):
@@ -92,7 +100,10 @@ def main():
     if hasattr(args, "func"):
         func = kwargs.pop("func")
         logger.debug("%s(**%r)", func.__name__, kwargs)
-        func(**kwargs)
+        if inspect.iscoroutinefunction(func):
+            asyncio.run(func(**kwargs))
+        else:
+            func(**kwargs)
     else:
         top_parser.print_help()
 

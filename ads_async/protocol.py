@@ -116,11 +116,13 @@ def from_wire(
                 except Exception as ex:
                     logger.exception(
                         "Deserialization of %s failed: %s bytes=%s (length=%d); "
-                        "this may be fatal.",
+                        "this may be fatal. (Header=%s + %s)",
                         cmd_cls,
                         ex,
                         bytes(view),
                         len(bytes(view)),
+                        header,
+                        aoe_header,
                     )
                     continue
 
@@ -608,17 +610,17 @@ class _Circuit:
         self.id_to_request = {}
         self._handle_counter = utils.ThreadsafeCounter(
             initial_value=100,
-            max_count=2 ** 32,  # handles are uint32
+            max_count=2**32,  # handles are uint32
             dont_clash_with=self.handle_to_symbol,
         )
         self._notification_counter = utils.ThreadsafeCounter(
             initial_value=100,
-            max_count=2 ** 32,  # handles are uint32
+            max_count=2**32,  # handles are uint32
             dont_clash_with=self.handle_to_notification,
         )
         self._invoke_counter = utils.ThreadsafeCounter(
             initial_value=100,
-            max_count=2 ** 32,  # handles are uint32
+            max_count=2**32,  # handles are uint32
         )
         self.tags = tags or {}
         self.log = log.ComposableLogAdapter(module_logger, self.tags)
@@ -995,7 +997,7 @@ class ClientCircuit(_Circuit):
         Add an advanced notification by way of index group/offset.
 
         Parameters
-        -----------
+        ----------
         index_group : int
             Contains the index group number of the requested ADS service.
 
@@ -1030,7 +1032,7 @@ class ClientCircuit(_Circuit):
         Remove a notification given its handle.
 
         Parameters
-        -----------
+        ----------
         handle : int
             The notification handle.
         """
@@ -1041,11 +1043,164 @@ class ClientCircuit(_Circuit):
         Remove a notification given its handle.
 
         Parameters
-        -----------
+        ----------
         handle : int
             The notification handle.
         """
         return structs.AdsDeviceInfoRequest()
+
+    def index_group_read_write_request(
+        self,
+        index_group: int,
+        index_offset: int,
+        data: bytes,
+        read_length: int,
+    ) -> structs.AdsReadWriteRequest:
+        """
+        Perform a raw read-write request.
+
+        Parameters
+        ----------
+        """
+        data = bytes(data)
+        write_length = len(data)
+        req = structs.AdsReadWriteRequest(
+            index_group,
+            index_offset,
+            read_length,
+            write_length,
+        )
+        req.data = data
+        return req
+
+    def request_file_download(
+        self,
+        filename: bytes,
+        directory: constants.DownloadPath = constants.DownloadPath.boot,
+    ) -> structs.AdsReadWriteRequest:
+        """
+        Make a request to get (download) a file.
+
+        To be sent over the ADS service port.
+
+        The order of operations is:
+        1. Request file download to get a handle
+        2. Use that handle to read the file (group=122, offset=handle)
+        3. Repeat (2) until the received packet is less than the buffer
+           size requested.
+        4. Clear the handle (group=123, offset=handle)
+
+        Parameters
+        ----------
+        filename : bytes
+            The encoded filename.
+        directory : DownloadPath
+            The path to download from (/Hard Drive/TwinCAT/3.1/...)
+        """
+        if directory == constants.DownloadPath.boot:
+            offset = 262161
+        elif directory == constants.DownloadPath.target:
+            offset = 327697
+        else:
+            raise ValueError(f"Unsupported directory: {directory}")
+
+        return self.index_group_read_write_request(
+            index_group=120,
+            index_offset=offset,
+            data=filename,
+            read_length=ctypes.sizeof(structs.AdsFileStat),
+        )
+
+    def clear_file_handle(self, handle: int) -> structs.AdsReadWriteRequest:
+        """
+        Close a file handle used for downloading.
+
+        Note: This is an educated guess.
+
+        Parameters
+        ----------
+        handle : int
+            The previously configured handle from ``request_file_download``.
+        """
+        return self.index_group_read_write_request(
+            index_group=123,
+            index_offset=handle,
+            data=b"",
+            read_length=0,
+        )
+
+    def read_file_contents(
+        self, handle: int, buffer_size: int = 16384
+    ) -> structs.AdsReadWriteRequest:
+        """
+        Create a reusable file content read request.
+
+        Parameters
+        ----------
+        handle : int
+            The previously configured handle from ``request_file_download``.
+        buffer_size : int, optional
+            The buffer size to use for each packet.
+        """
+        return self.index_group_read_write_request(
+            index_group=122,
+            index_offset=handle,
+            data=b"",
+            read_length=buffer_size,
+        )
+
+    def get_file_stat(
+        self,
+        filename: bytes,
+        directory: constants.DownloadPath = constants.DownloadPath.boot,
+    ) -> structs.AdsReadWriteRequest:
+        """
+        Make a request to get file stat information for the given filename.
+
+        To be sent over the ADS service port.
+
+        Parameters
+        ----------
+        filename : bytes
+            The encoded filename.
+        directory : DownloadPath
+            The path to download from (/Hard Drive/TwinCAT/3.1/...)
+        """
+        if directory != constants.DownloadPath.boot:
+            raise ValueError("Sorry, only 'boot' is supported for now")
+        return self.index_group_read_write_request(
+            index_group=134,
+            index_offset=4,
+            data=filename,
+            read_length=ctypes.sizeof(structs.AdsFileStat),
+        )
+
+    def get_matching_file_info(
+        self,
+        pattern: bytes,
+        directory: constants.DownloadPath = constants.DownloadPath.boot,
+    ) -> structs.AdsReadWriteRequest:
+        r"""
+        Make a request to get matching file information.
+
+        To be sent over the ADS service port.
+
+        Parameters
+        ----------
+        pattern : bytes
+            The encoded file pattern.  To reference subdirectories,
+            use "\\".
+        directory : DownloadPath
+            The path to download from (/Hard Drive/TwinCAT/3.1/...)
+        """
+        if directory != constants.DownloadPath.boot:
+            raise ValueError("Sorry, only 'boot' is supported for now")
+        return self.index_group_read_write_request(
+            index_group=133,
+            index_offset=4,
+            data=pattern,
+            read_length=ctypes.sizeof(structs.AdsMatchingFileInformation),
+        )
 
     def get_symbol_info_by_name(
         self,
@@ -1055,7 +1210,7 @@ class ClientCircuit(_Circuit):
         Get symbol information by name.
 
         Parameters
-        -----------
+        ----------
         name : str
             The symbol name.
         """
@@ -1069,7 +1224,7 @@ class ClientCircuit(_Circuit):
         Get symbol handle by name.
 
         Parameters
-        -----------
+        ----------
         name : str
             The symbol name.
         """
@@ -1083,7 +1238,7 @@ class ClientCircuit(_Circuit):
         Release a handle by id.
 
         Parameters
-        -----------
+        ----------
         handle : int
             The handle identifier.
         """
@@ -1102,7 +1257,7 @@ class ClientCircuit(_Circuit):
         Get symbol value by handle.
 
         Parameters
-        -----------
+        ----------
         handle : int
             The handle identifier.
 

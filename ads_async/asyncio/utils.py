@@ -1,9 +1,13 @@
+from __future__ import annotations
+
 import asyncio
 import functools
 import inspect
+import io
 import sys
 import threading
 import weakref
+import zipfile
 
 
 class _TaskHandler:
@@ -168,6 +172,45 @@ class CallbackHandler:
                 self.callbacks.pop(remove_id, None)
 
 
+class InMemoryZipFile:
+    """
+    An in-memory zip file, used for downloading files from the PLC.
+
+    Call `close()` when done with the file, or use it as a context manager.
+
+    Parameters
+    ----------
+    data : bytes
+        The raw contents of the zip file.
+    **kwargs :
+        Passed to ZipFile's initializer.
+    """
+
+    #: The underlying data buffer.
+    _buffer: io.BytesIO
+    #: The ready-to-use zip file.
+    zip: zipfile.ZipFile
+
+    def __init__(self, data: bytes, **kwargs):
+        self._buffer = io.BytesIO(data)
+        self.zip = zipfile.ZipFile(self._buffer, **kwargs)
+
+    def get_raw_data(self) -> bytes:
+        """Get the raw data of the zip file."""
+        return self._buffer.getvalue()
+
+    def close(self):
+        """Close the underyling buffers."""
+        self.zip.close()
+        self._buffer.close()
+
+    def __enter__(self) -> InMemoryZipFile:
+        return self
+
+    def __exit__(self, exc_type, exc_value, traceback):
+        self.close()
+
+
 if sys.version_info < (3, 7):
     # python <= 3.6 compatibility
     def get_running_loop():
@@ -178,7 +221,6 @@ if sys.version_info < (3, 7):
 
     def create_task(coro):
         return get_running_loop().create_task(coro)
-
 
 else:
     get_running_loop = asyncio.get_running_loop

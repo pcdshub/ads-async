@@ -6,6 +6,7 @@ given TwinCAT3 PLC.
 import argparse
 import json
 import logging
+from typing import Generator
 
 from .. import service
 from .utils import send_and_receive_service_udp
@@ -42,7 +43,7 @@ def build_arg_parser(argparser=None):
 def get_plc_info(
     plc_hostname: str,
     timeout: float = 2.0,
-) -> dict:
+) -> Generator[dict, None, None]:
     """
     Get a PLC's Net ID and other information from its IP address.
 

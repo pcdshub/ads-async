@@ -1,11 +1,15 @@
+from __future__ import annotations
+
 import asyncio
 import collections
 import contextvars
+import ctypes
 import ipaddress
+import os
 import typing
-from typing import Optional
+from typing import Dict, Optional
 
-from .. import constants, exceptions, log, protocol, structs
+from .. import constants, exceptions, protocol, structs
 from ..constants import AdsTransmissionMode, AmsPort
 from . import utils
 
@@ -85,7 +89,7 @@ class Notification(utils.CallbackHandler):
         finally:
             await self.remove_callback(sid)
 
-    async def __aenter__(self):
+    async def __aenter__(self) -> Notification:
         return self
 
     async def __aexit__(self, exc_type, exc_value, traceback):
@@ -263,7 +267,7 @@ class Symbol:
         self.handle = None
         self.string_encoding = string_encoding
 
-    async def __aenter__(self):
+    async def __aenter__(self) -> Symbol:
         return self
 
     async def __aexit__(self, exc_type, exc_value, traceback):
@@ -683,6 +687,146 @@ class AsyncioClientCircuit:
         for source, handle in self.circuit.unknown_notifications:
             _, port = source
             await self.send(self.circuit.remove_notification(handle), port=port)
+
+    async def download_current_config_file(
+        self,
+        buffer_size: int = 16384,
+    ) -> utils.InMemoryZipFile:
+        """Download the current configuration (CurrentConfig.tszip)."""
+        current_config = await self.get_file(
+            "boot/CurrentConfig.tszip", buffer_size=buffer_size
+        )
+        return utils.InMemoryZipFile(current_config)
+
+    async def download_projects(
+        self,
+        buffer_size: int = 16384,
+    ) -> Dict[str, utils.InMemoryZipFile]:
+        """Download the active project."""
+        current_config = await self.download_current_config_file(
+            buffer_size=buffer_size
+        )
+        projects = {}
+        for fn in current_config.zip.filelist:
+            if fn.filename.startswith("_Config/PLC/"):
+                project_name, _ = os.path.splitext(os.path.basename(fn.filename))
+                tpzip_filename = f"{project_name}.tpzip"
+                projects[tpzip_filename] = utils.InMemoryZipFile(
+                    await self.get_file(
+                        f"boot/CurrentConfig\\{tpzip_filename}", buffer_size=buffer_size
+                    )
+                )
+        return projects
+
+    async def get_file(
+        self,
+        filename: str,
+        encoding: str = constants.ADS_ASYNC_STRING_ENCODING,
+        buffer_size: int = 16384,
+    ) -> bytes:
+        """
+        Download a file from the PLC.
+
+        Parameters
+        ----------
+        filename : str
+            The filename, the start which should be either "boot/" or "target/".
+        directory : DownloadPath
+            The path to download from (/Hard Drive/TwinCAT/3.1/...)
+
+        Returns
+        -------
+        data : bytes
+            The contents of the file.
+
+        Raises
+        ------
+        RequestFailedError
+            With DEVICE_NOTFOUND if the file is not found
+        AdsAsyncException
+            If the download doesn't proceed as expected
+        """
+        try:
+            directory, filename = filename.split("/", 1)
+            path = constants.DownloadPath[directory.lower()]
+        except Exception:
+            raise ValueError(
+                f"The filename should start with boot/ or target/. " f"Got: {filename}"
+            )
+
+        if path in (constants.DownloadPath.boot,):
+            file_info = await self.get_file_stat(
+                filename, directory=path, encoding=encoding
+            )
+            self.log.info("Downloading %s: %s", filename, file_info)
+        else:
+            self.log.info("Downloading %s", filename)
+
+        request = self.circuit.request_file_download(
+            filename=filename.encode(encoding), directory=path
+        )
+        res = await self.write_and_read(request, port=AmsPort.R3_SYSSERV)
+        if res is None:
+            raise exceptions.AdsAsyncException(
+                "Unable to get a handle for downloading the file"
+            )
+
+        handle = ctypes.c_uint32.from_buffer_copy(res.data).value
+        read_request = self.circuit.read_file_contents(handle, buffer_size=buffer_size)
+        clear_request = self.circuit.clear_file_handle(handle)
+        buffer = []
+        try:
+            while True:
+                res = await self.write_and_read(read_request, port=AmsPort.R3_SYSSERV)
+                if res is None:
+                    raise exceptions.AdsAsyncException("Download interrupted?")
+                buffer.append(res.data)
+                if len(res.data) < buffer_size:
+                    break
+        finally:
+            await self.write_and_read(clear_request, port=AmsPort.R3_SYSSERV)
+
+        return b"".join(buffer)
+
+    async def get_file_stat(
+        self,
+        filename: str,
+        directory: constants.DownloadPath = constants.DownloadPath.boot,
+        encoding: str = constants.ADS_ASYNC_STRING_ENCODING,
+    ) -> structs.AdsFileStat:
+        """Get file information from the PLC."""
+        request = self.circuit.get_file_stat(
+            filename=filename.encode(encoding), directory=directory
+        )
+        res = await self.write_and_read(request, port=AmsPort.R3_SYSSERV)
+        if res is None:
+            raise exceptions.RequestFailedError(
+                "File not found or service not enabled?",
+                code=constants.AdsError.NOERR,
+                request=request,
+            )
+
+        return structs.AdsFileStat.from_buffer_copy(res.data)
+
+    async def get_matching_file_info(
+        self,
+        pattern: str,
+        directory: constants.DownloadPath = constants.DownloadPath.boot,
+        encoding: str = constants.ADS_ASYNC_STRING_ENCODING,
+    ) -> structs.AdsMatchingFileInformation:
+        """Get file information from the PLC."""
+        request = self.circuit.get_matching_file_info(
+            pattern=pattern.encode(encoding), directory=directory
+        )
+        res = await self.write_and_read(request, port=AmsPort.R3_SYSSERV)
+        if res is None:
+            raise exceptions.RequestFailedError(
+                "File not found or service not enabled?",
+                code=constants.AdsError.NOERR,
+                request=request,
+            )
+
+        return structs.AdsMatchingFileInformation.from_buffer_copy(res.data)
 
 
 class AsyncioClientConnection:
