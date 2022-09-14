@@ -173,13 +173,36 @@ class CallbackHandler:
 
 
 class InMemoryZipFile:
+    """
+    An in-memory zip file, used for downloading files from the PLC.
+
+    Call `close()` when done with the file, or use it as a context manager.
+
+    Parameters
+    ----------
+    data : bytes
+        The raw contents of the zip file.
+    **kwargs :
+        Passed to ZipFile's initializer.
+    """
+
+    #: The underlying data buffer.
+    _buffer: io.BytesIO
+    #: The ready-to-use zip file.
+    zip: zipfile.ZipFile
+
     def __init__(self, data: bytes, **kwargs):
-        self.buffer = io.BytesIO(data)
-        self.zip = zipfile.ZipFile(self.buffer, **kwargs)
+        self._buffer = io.BytesIO(data)
+        self.zip = zipfile.ZipFile(self._buffer, **kwargs)
+
+    def get_raw_data(self) -> bytes:
+        """Get the raw data of the zip file."""
+        return self._buffer.getvalue()
 
     def close(self):
+        """Close the underyling buffers."""
         self.zip.close()
-        self.buffer = None
+        self._buffer.close()
 
     def __enter__(self) -> InMemoryZipFile:
         return self

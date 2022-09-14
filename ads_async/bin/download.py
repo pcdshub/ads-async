@@ -3,14 +3,14 @@
 TwinCAT3 PLC.
 """
 import argparse
-import asyncio
+import dataclasses
 import json
 import logging
 import os
 import sys
-from typing import Any, Dict, List, Optional
+from typing import AsyncGenerator, List, Optional
 
-from .. import constants
+from .. import constants, structs
 from .utils import setup_connection
 
 DESCRIPTION = __doc__
@@ -87,6 +87,19 @@ def build_arg_parser(argparser=None):
     return argparser
 
 
+@dataclasses.dataclass
+class DownloadItem:
+    #: The remote filename.  None if referring to a failed project download.
+    filename: Optional[str] = None
+    #: File status information.
+    stat: Optional[structs.AdsFileStat] = None
+    #: Data contained in the file, if successfully downloaded.
+    data: Optional[bytes] = None
+    #: Exception raised during the download process.  Only set if ``data`` is
+    #: None.
+    error: Optional[Exception] = None
+
+
 async def async_download(
     plc_hostname: str,
     filenames: List[str],
@@ -96,9 +109,8 @@ async def async_download(
     add_route: bool = False,
     project: bool = False,
     route_host: str = "",
-) -> Dict[str, Dict[str, Any]]:
+) -> AsyncGenerator[DownloadItem, None]:
     """Download files and/or projects from a PLC."""
-    result = {}
     async with setup_connection(
         plc_hostname,
         plc_net_id=plc_net_id,
@@ -121,33 +133,34 @@ async def async_download(
             else:
                 error = None
 
-            result[filename] = {
-                "stat": stat,
-                "data": data,
-                "error": error,
-            }
+            yield DownloadItem(
+                filename=filename,
+                stat=stat,
+                data=data,
+                error=error,
+            )
 
         if project:
             try:
                 projects = await circuit.download_projects()
             except Exception as ex:
-                result["projects"] = {
-                    "data": None,
-                    "stat": None,
-                    "error": ex,
-                }
+                yield DownloadItem(
+                    filename=None,
+                    stat=None,
+                    data=None,
+                    error=ex,
+                )
             else:
                 for fn, zipfile in projects.items():
-                    result[fn] = {
-                        "data": zipfile.buffer.getvalue(),
-                        "stat": None,
-                        "error": None,
-                    }
+                    yield DownloadItem(
+                        filename=fn,
+                        data=zipfile.get_raw_data(),
+                        stat=None,
+                        error=None,
+                    )
 
-    return result
 
-
-def main(
+async def main(
     host: str,
     filenames: List[str],
     save_to: str = ".",
@@ -160,41 +173,40 @@ def main(
     project: bool = False,
     stdout: bool = False,
 ):
-    result = asyncio.run(
-        async_download(
-            host,
-            filenames,
-            plc_net_id=net_id,
-            our_net_id=our_net_id,
-            add_route=add_route,
-            route_host=our_host,
-            timeout=timeout,
-            project=project,
-        )
-    )
     to_display = {}
-    for filename, info in result.items():
+    async for info in async_download(
+        host,
+        filenames,
+        plc_net_id=net_id,
+        our_net_id=our_net_id,
+        add_route=add_route,
+        route_host=our_host,
+        timeout=timeout,
+        project=project,
+    ):
+        filename = info.filename or "(project)"
         to_display[filename] = {}
         if stdout:
-            if info["data"] is not None:
-                sys.stdout.buffer.write(info["data"])
+            if info.data is not None:
+                sys.stdout.buffer.write(info.data)
                 sys.stdout.flush()
             else:
-                module_logger.warning("Unable to download file: %s", info["error"])
+                module_logger.warning("Unable to download file: %s", info.error)
         else:
-            if info["stat"] is not None:
-                to_display[filename]["stat"] = info["stat"].to_dict()
+            if info.stat is not None:
+                to_display[filename]["stat"] = info.stat.to_dict()
 
-            if info["data"] is not None:
+            if info.data is not None:
                 bare_filename = os.path.split(filename)[-1]
                 write_filename = os.path.join(save_to, bare_filename)
                 with open(write_filename, "wb") as fp:
-                    fp.write(info["data"])
-                to_display[filename]["wrote_bytes"] = len(info["data"])
+                    fp.write(info.data)
+                to_display[filename]["wrote_bytes"] = len(info.data)
                 to_display[filename]["wrote_to"] = write_filename
             else:
-                err = info["error"]
-                to_display[filename]["error"] = f"{err.__class__.__name__}: {err}"
+                to_display[filename][
+                    "error"
+                ] = f"{info.error.__class__.__name__}: {info.error}"
 
     if not stdout:
         print(json.dumps(to_display, indent=4))
