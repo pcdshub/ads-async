@@ -5,7 +5,7 @@ import ctypes
 import inspect
 import logging
 import typing
-from typing import Callable, Dict, Generator, Optional, Tuple, Union
+from typing import Callable, Generator
 
 from . import constants, log, structs, utils
 from .constants import (

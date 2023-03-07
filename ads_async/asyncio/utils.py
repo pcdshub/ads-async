@@ -4,7 +4,6 @@ import asyncio
 import functools
 import inspect
 import io
-import sys
 import threading
 import weakref
 import zipfile

@@ -5,7 +5,7 @@ import math
 import sys
 import textwrap
 import typing
-from typing import Optional, Type
+from typing import Optional
 
 from . import constants, log, structs
 from .constants import AdsDataType

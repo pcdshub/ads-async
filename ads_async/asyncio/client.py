@@ -7,7 +7,6 @@ import ctypes
 import ipaddress
 import os
 import typing
-from typing import Dict, Optional
 
 from .. import constants, exceptions, protocol, structs
 from ..constants import AdsTransmissionMode, AmsPort

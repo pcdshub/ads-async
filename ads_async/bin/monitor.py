@@ -5,7 +5,7 @@ given TwinCAT3 PLC.
 import argparse
 import asyncio
 import logging
-from typing import List, Optional
+from typing import Optional
 
 from .. import constants, structs
 from .utils import setup_connection
