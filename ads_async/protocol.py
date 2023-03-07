@@ -8,15 +8,8 @@ import typing
 from typing import Callable, Generator
 
 from . import constants, log, structs, utils
-from .constants import (
-    AdsCommandId,
-    AdsError,
-    AdsIndexGroup,
-    AdsTransmissionMode,
-    AmsPort,
-    AoEHeaderFlag,
-    Role,
-)
+from .constants import (AdsCommandId, AdsError, AdsIndexGroup,
+                        AdsTransmissionMode, AmsPort, AoEHeaderFlag, Role)
 from .exceptions import RequestFailedError
 from .structs import AmsNetId
 from .symbols import Database, Symbol
