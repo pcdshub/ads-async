@@ -8,7 +8,8 @@ import json
 import logging
 import os
 import sys
-from typing import AsyncGenerator, Optional
+from collections.abc import AsyncGenerator
+from typing import Optional
 
 from .. import constants, structs
 from .utils import setup_connection

@@ -5,7 +5,8 @@ import ctypes
 import inspect
 import logging
 import typing
-from typing import Callable, Generator
+from collections.abc import Generator
+from typing import Callable
 
 from . import constants, log, structs, utils
 from .constants import (

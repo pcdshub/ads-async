@@ -2,7 +2,8 @@ import asyncio
 import contextlib
 import logging
 import socket
-from typing import Generator, Optional
+from collections.abc import Generator
+from typing import Optional
 
 from .. import constants, service
 from ..asyncio.client import Client

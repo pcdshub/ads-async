@@ -6,7 +6,7 @@ given TwinCAT3 PLC.
 import argparse
 import json
 import logging
-from typing import Generator
+from collections.abc import Generator
 
 from .. import service
 from .utils import send_and_receive_service_udp
