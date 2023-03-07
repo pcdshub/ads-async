@@ -14,25 +14,20 @@ build:
   noarch: python
   script: {{ PYTHON }} -m pip install . -vv
 
-
-
 requirements:
   build:
-  - python >=3.6
+  - python >=3.9
   - setuptools_scm
   - pip
   run:
-  - python >=3.6
-
-
+  - python >=3.9
 
 test:
   imports:
   - ads_async
   requires:
   - pytest
-
-
+  - pytmc
 
 about:
   home: https://github.com/pcdshub/ads-async
