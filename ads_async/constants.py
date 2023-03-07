@@ -380,10 +380,10 @@ class AdsDataType(enum.IntEnum):
     BIT = 33
     MAXTYPES = 34
 
-    to_ctypes: typing.Mapping["AdsDataType", typing.Type[ctypes._SimpleCData]]
+    to_ctypes: typing.Mapping["AdsDataType", type[ctypes._SimpleCData]]
 
     @property
-    def ctypes_type(self) -> typing.Type[ctypes._SimpleCData]:
+    def ctypes_type(self) -> type[ctypes._SimpleCData]:
         """Get the ctypes _SimpleCData type associated with the data type."""
         return self.to_ctypes[self]
 

@@ -13,8 +13,8 @@ from .constants import AoEHeaderFlag
 
 T_AdsStructure = typing.TypeVar("T_AdsStructure", bound="_AdsStructBase")
 T_Serializable = typing.Union[T_AdsStructure, bytes, ctypes._SimpleCData]
-T_PayloadField = typing.Tuple[str, str, int, typing.Callable, typing.Callable]
-_T_Commands = typing.Dict[constants.AdsCommandId, typing.Dict[str, T_AdsStructure]]
+T_PayloadField = tuple[str, str, int, typing.Callable, typing.Callable]
+_T_Commands = dict[constants.AdsCommandId, dict[str, T_AdsStructure]]
 
 _commands = {}  # type: _T_Commands
 
@@ -109,8 +109,8 @@ class _AdsStructBase(ctypes.LittleEndianStructure):
     _command_id: constants.AdsCommandId = constants.AdsCommandId.INVALID
 
     _pack_ = 1
-    _dict_mapping: typing.Dict[str, str] = {}
-    _payload_fields: typing.List[T_PayloadField] = []
+    _dict_mapping: dict[str, str] = {}
+    _payload_fields: list[T_PayloadField] = []
 
     def __init_subclass__(cls):
         super().__init_subclass__()
@@ -158,7 +158,7 @@ class _AdsStructBase(ctypes.LittleEndianStructure):
 
     @classmethod
     def deserialize(
-        cls: typing.Type[T_AdsStructure], buf: typing.Union[memoryview, bytearray]
+        cls: type[T_AdsStructure], buf: memoryview | bytearray
     ) -> T_AdsStructure:
         """
         Deserialize data from `buf` into a structure + payload.
@@ -203,7 +203,7 @@ class _AdsStructBase(ctypes.LittleEndianStructure):
 
 def _enum_property(
     field_name: str,
-    enum_cls: typing.Type[enum.Enum],
+    enum_cls: type[enum.Enum],
     *,
     doc: str = None,
     strict: bool = True,
@@ -273,7 +273,7 @@ def _create_byte_string_property(
         except ValueError:
             return value
 
-    def fset(self, value: typing.Union[str, bytes]):
+    def fset(self, value: str | bytes):
         if isinstance(value, str):
             value = value.encode(encoding)
         setattr(self, field_name, value)
@@ -300,8 +300,8 @@ class AmsNetId(_AdsStructBase):
 
     @classmethod
     def from_ipv4(
-        cls: typing.Type[T_AdsStructure],
-        ip: typing.Union[str, ipaddress.IPv4Address],
+        cls: type[T_AdsStructure],
+        ip: str | ipaddress.IPv4Address,
         octet5: int = 1,
         octet6: int = 1,
     ) -> T_AdsStructure:
@@ -329,7 +329,7 @@ class AmsNetId(_AdsStructBase):
         return cls(tuple(ip.packed) + (octet5, octet6))
 
     @classmethod
-    def from_string(cls: typing.Type[T_AdsStructure], addr: str) -> T_AdsStructure:
+    def from_string(cls: type[T_AdsStructure], addr: str) -> T_AdsStructure:
         """
         Create an AMS Net ID based on an AMS ID string.
 
@@ -391,7 +391,7 @@ class AdsVersion(_AdsStructBase):
     ]
 
     @property
-    def as_tuple(self) -> typing.Tuple[int, int, int]:
+    def as_tuple(self) -> tuple[int, int, int]:
         """The version tuple: (Version, Revision, Build)"""
         return (self.version, self.revision, self.build)
 
@@ -486,7 +486,7 @@ class AdsNotificationLogMessage(_AdsStructBase):
 
     @classmethod
     def deserialize(
-        cls: typing.Type[T_AdsStructure], buf: typing.Union[memoryview, bytearray]
+        cls: type[T_AdsStructure], buf: memoryview | bytearray
     ) -> AdsNotificationLogMessage:
         """Deserialize a log message."""
         # message_length is not reliable when nearing 255+ characters!
@@ -576,7 +576,7 @@ class AdsNotificationStampHeader(_AdsStructBase):
 
     @classmethod
     def deserialize(
-        cls: typing.Type[T_AdsStructure], buf: typing.Union[memoryview, bytearray]
+        cls: type[T_AdsStructure], buf: memoryview | bytearray
     ) -> T_AdsStructure:
         new_struct = cls.from_buffer(buf)
         payload_buf = memoryview(buf)[ctypes.sizeof(cls) :]
@@ -609,7 +609,7 @@ class AdsNotificationStream(_AdsStructBase):
 
     @classmethod
     def deserialize(
-        cls: typing.Type[T_AdsStructure], buf: typing.Union[memoryview, bytearray]
+        cls: type[T_AdsStructure], buf: memoryview | bytearray
     ) -> T_AdsStructure:
         new_struct = cls.from_buffer(buf)
         payload_buf = memoryview(buf)[ctypes.sizeof(cls) :]
@@ -1259,13 +1259,13 @@ class AdsDeviceInfo(AoEResponseHeader):
         self.name = name
 
     @property
-    def version_tuple(self) -> typing.Tuple[int, int, int]:
+    def version_tuple(self) -> tuple[int, int, int]:
         """The version tuple: (Version, Revision, Build)"""
         return self.version.as_tuple
 
     @classmethod
     def deserialize(
-        cls: typing.Type[T_AdsStructure], buf: typing.Union[memoryview, bytearray]
+        cls: type[T_AdsStructure], buf: memoryview | bytearray
     ) -> T_AdsStructure:
         buf = bytearray(buf)
         if len(buf) < ctypes.sizeof(AdsDeviceInfo):
@@ -1386,7 +1386,7 @@ def serialize_data(
     length: int = None,
     *,
     endian="<",
-) -> typing.Tuple[int, bytes]:
+) -> tuple[int, bytes]:
     """
     Serialize symbol data for transmission over the wire.
 
@@ -1420,7 +1420,7 @@ def serialize_data(
 
 def deserialize_data(
     data_type: constants.AdsDataType, length: int, data: bytes, *, endian="<"
-) -> typing.Tuple[int, typing.Any]:
+) -> tuple[int, typing.Any]:
     """
     Deserialize symbol data from the wire.
 
@@ -1457,7 +1457,7 @@ def deserialize_data_by_symbol_entry(
     *,
     endian="<",
     string_encoding: str = constants.ADS_ASYNC_STRING_ENCODING,
-) -> typing.Tuple[int, typing.Any]:
+) -> tuple[int, typing.Any]:
     """
     Deserialize symbol data from the wire, given AdsSymbolEntry information.
 

@@ -89,7 +89,7 @@ class LogFormatter(logging.Formatter):
         if record.exc_info and not record.exc_text:
             record.exc_text = self.formatException(record.exc_info)
         if record.exc_text:
-            formatted = "{}\n{}".format(formatted.rstrip(), record.exc_text)
+            formatted = f"{formatted.rstrip()}\n{record.exc_text}"
         return formatted.replace("\n", "\n    ")
 
 

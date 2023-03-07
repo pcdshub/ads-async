@@ -190,10 +190,10 @@ class Notification(utils.CallbackHandler):
 class _BlockingRequest:
     """Helper for handling blocking requests in the client."""
 
-    owner: "AsyncioClientConnection"
+    owner: AsyncioClientConnection
     request: structs.T_AdsStructure
-    header: Optional[structs.AoEHeader]
-    response: Optional[structs.T_AdsStructure]
+    header: structs.AoEHeader | None
+    response: structs.T_AdsStructure | None
     options: dict
 
     def __init__(self, owner, request, error_event, **options):
@@ -242,21 +242,21 @@ class Symbol:
     Not to be instantiated by itself.
     """
 
-    owner: "AsyncioClientCircuit"
-    index_group: Optional[int]
-    index_offset: Optional[int]
-    name: Optional[str]
-    info: Optional[structs.AdsSymbolEntry]
-    handle: Optional[int]
+    owner: AsyncioClientCircuit
+    index_group: int | None
+    index_offset: int | None
+    name: str | None
+    info: structs.AdsSymbolEntry | None
+    handle: int | None
     string_encoding: str
 
     def __init__(
         self,
-        owner: "AsyncioClientCircuit",
+        owner: AsyncioClientCircuit,
         *,
-        index_group: Optional[int] = None,
-        index_offset: Optional[int] = None,
-        name: Optional[str] = None,
+        index_group: int | None = None,
+        index_offset: int | None = None,
+        name: str | None = None,
         string_encoding: str = constants.ADS_ASYNC_STRING_ENCODING,
     ):
         self.owner = owner
@@ -375,14 +375,14 @@ class AsyncioClientCircuit:
     circuit: protocol.ClientCircuit
     _response_handlers: typing.DefaultDict[int, list]
     _symbols: dict
-    connection: "AsyncioClientConnection"
+    connection: AsyncioClientConnection
     default_port: AmsPort
     log: log.ComposableLogAdapter
     net_id: str
 
     def __init__(
         self,
-        connection: "AsyncioClientConnection",
+        connection: AsyncioClientConnection,
         net_id: str,
         default_port=AmsPort.R0_PLC_TC3,
     ):
@@ -412,8 +412,8 @@ class AsyncioClientCircuit:
         self,
         *items,
         ads_error: constants.AdsError = constants.AdsError.NOERR,
-        port: Optional[AmsPort] = None,
-        response_handler: Optional[typing.Coroutine] = None,
+        port: AmsPort | None = None,
+        response_handler: typing.Coroutine | None = None,
     ):
         """
         Package and send items over the wire.
@@ -487,8 +487,8 @@ class AsyncioClientCircuit:
         mode: AdsTransmissionMode = AdsTransmissionMode.SERVERCYCLE,
         max_delay: int = 1,
         cycle_time: int = 100,
-        net_id: Optional[str] = None,
-        port: Optional[AmsPort] = None,
+        net_id: str | None = None,
+        port: AmsPort | None = None,
     ) -> Notification:
         """
         Add an advanced notification by way of index group/offset.
@@ -538,7 +538,7 @@ class AsyncioClientCircuit:
     async def write_and_read(
         self,
         item,
-        port: Optional[AmsPort] = None,
+        port: AmsPort | None = None,
     ):
         """
         Write `item` and read the server's response.
@@ -672,7 +672,7 @@ class AsyncioClientCircuit:
         ).read()
         return count
 
-    async def get_task_names(self) -> typing.Dict[int, str]:
+    async def get_task_names(self) -> dict[int, str]:
         """Get the names of tasks running on the PLC."""
         task_count = await self.get_task_count()
         names = {}
@@ -701,7 +701,7 @@ class AsyncioClientCircuit:
     async def download_projects(
         self,
         buffer_size: int = 16384,
-    ) -> Dict[str, utils.InMemoryZipFile]:
+    ) -> dict[str, utils.InMemoryZipFile]:
         """Download the active project."""
         current_config = await self.download_current_config_file(
             buffer_size=buffer_size
@@ -853,9 +853,9 @@ class AsyncioClientConnection:
 
     def __init__(
         self,
-        their_address: typing.Tuple[str, int],
-        our_net_id: Optional[str] = None,  # can be determined later
-        reconnect_rate: Optional[int] = 10,
+        their_address: tuple[str, int],
+        our_net_id: str | None = None,  # can be determined later
+        reconnect_rate: int | None = 10,
         request_timeout: float = 2.0,
     ):
         self.connection = protocol.ClientConnection(
@@ -885,7 +885,7 @@ class AsyncioClientConnection:
     def __getitem__(self, key):
         return self.get_circuit(key)
 
-    def get_circuit(self, net_id: Optional[str] = None):
+    def get_circuit(self, net_id: str | None = None):
         """
         Get a circuit to the given target Net ID.
 

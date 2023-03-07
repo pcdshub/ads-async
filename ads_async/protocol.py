@@ -22,7 +22,7 @@ from .structs import AmsNetId
 from .symbols import Database, Symbol
 
 module_logger = logging.getLogger(__name__)
-IPPort = typing.Tuple[str, int]
+IPPort = tuple[str, int]
 
 # TODO: AMS can be over serial, UDP, etc. and not just TCP
 _AMS_HEADER_LENGTH = ctypes.sizeof(structs.AmsTcpHeader)
@@ -37,7 +37,7 @@ def from_wire(
     buf: bytearray,
     *,
     logger: logging.Logger = module_logger,
-) -> Generator[Tuple[structs.AoEHeader, typing.Any], None, None]:
+) -> Generator[tuple[structs.AoEHeader, typing.Any], None, None]:
     """
     Deserialize data from the wire into ctypes structures.
 
@@ -135,7 +135,7 @@ def response_to_wire(
     *items: structs.T_Serializable,
     request_header: structs.AoEHeader,
     ads_error: AdsError = AdsError.NOERR,
-) -> Tuple[list, bytearray]:
+) -> tuple[list, bytearray]:
     """
     Prepare `items` to be sent over the wire.
 
@@ -187,7 +187,7 @@ def request_to_wire(
     invoke_id: int,
     state_flags: AoEHeaderFlag = AoEHeaderFlag.ADS_COMMAND,
     error_code: int = 0,
-) -> Tuple[list, bytearray]:
+) -> tuple[list, bytearray]:
     """
     Prepare `items` to be sent over the wire.
 
@@ -310,7 +310,7 @@ class _Connection:
     _our_address: IPPort
     _our_net_id: str
     circuit_class: type
-    circuits: Dict[str, _Circuit]
+    circuits: dict[str, _Circuit]
     recv_buffer: bytearray
     role: Role
     their_address: IPPort
@@ -319,8 +319,8 @@ class _Connection:
         self,
         their_address: IPPort,
         role: constants.Role,
-        our_address: Optional[IPPort] = None,
-        our_net_id: Optional[str] = None,
+        our_address: IPPort | None = None,
+        our_net_id: str | None = None,
     ):
         self.recv_buffer = bytearray()
         self.circuits = {}
@@ -376,7 +376,7 @@ class _Connection:
             self.recv_buffer = self.recv_buffer[consumed:]
             yield item
 
-    def get_circuit(self, net_id: Union[AmsNetId, str]) -> _Circuit:
+    def get_circuit(self, net_id: AmsNetId | str) -> _Circuit:
         """Get a circuit for (their) Net ID."""
         if isinstance(net_id, AmsNetId):
             net_id = repr(net_id)
@@ -449,11 +449,11 @@ class ServerConnection(_Connection):
         The server instance.
     """
 
-    server: "Server"
+    server: Server
 
     def __init__(
         self,
-        server: "Server",
+        server: Server,
         our_address: IPPort,
         our_net_id: str,
         their_address: IPPort,
@@ -480,9 +480,9 @@ class Server:
     :class:`.asyncio.server.AsyncioServer`
     """
 
-    _version: Tuple[int, int, int] = (0, 0, 0)  # TODO: from versioneer
+    _version: tuple[int, int, int] = (0, 0, 0)  # TODO: from versioneer
     _name: str
-    connections: Dict[IPPort, ServerConnection]
+    connections: dict[IPPort, ServerConnection]
     database: Database
     log: log.ComposableLogAdapter
 
@@ -550,7 +550,7 @@ class Server:
         return constants.AdsState.RUN
 
     @property
-    def version(self) -> Tuple[int, int, int]:
+    def version(self) -> tuple[int, int, int]:
         """The server version."""
         return self._version
 
@@ -593,10 +593,10 @@ class _Circuit:
 
     def __init__(
         self,
-        connection: "_Connection",
+        connection: _Connection,
         our_net_id: str,
         their_net_id: str,
-        tags: Optional[dict] = None,
+        tags: dict | None = None,
         our_port: AmsPort = AmsPort.R0_PLC_TC3,
         their_port: AmsPort = AmsPort.R0_PLC_TC3,
     ):
@@ -644,7 +644,7 @@ class _Circuit:
         )
 
     def get_handler(
-        self, header: structs.AoEHeader, command: Optional[structs.T_AdsStructure]
+        self, header: structs.AoEHeader, command: structs.T_AdsStructure | None
     ) -> list:
         """
         Top-level command dispatcher.
@@ -729,7 +729,7 @@ class _Circuit:
         self,
         *items: structs.T_Serializable,
         ads_error: AdsError = AdsError.NOERR,
-        target: Optional[structs.AmsAddr] = None,
+        target: structs.AmsAddr | None = None,
     ) -> bytearray:
         """
         Prepare `items` to be sent over the wire.
@@ -805,7 +805,7 @@ class ClientCircuit(_Circuit):
 
     _handle_counter: utils.ThreadsafeCounter
     _notification_counter: utils.ThreadsafeCounter
-    _handlers: Dict[Tuple[AdsCommandId, Optional[AdsIndexGroup]], Callable]
+    _handlers: dict[tuple[AdsCommandId, AdsIndexGroup | None], Callable]
     address: IPPort
     server_host: IPPort
 
@@ -814,7 +814,7 @@ class ClientCircuit(_Circuit):
         connection: ClientConnection,
         our_net_id: str,
         their_net_id: str,
-        tags: Optional[dict] = None,
+        tags: dict | None = None,
         our_port: AmsPort = AmsPort.R0_PLC_TC3,
         their_port: AmsPort = AmsPort.R0_PLC_TC3,
     ):
@@ -1289,9 +1289,9 @@ class ServerCircuit(_Circuit):
 
     _handle_counter: utils.ThreadsafeCounter
     _notification_counter: utils.ThreadsafeCounter
-    _handlers: Dict[Tuple[AdsCommandId, Optional[AdsIndexGroup]], Callable]
+    _handlers: dict[tuple[AdsCommandId, AdsIndexGroup | None], Callable]
     address: IPPort
-    server: "Server"
+    server: Server
     server_host: IPPort
     connection: ServerConnection
 
@@ -1300,7 +1300,7 @@ class ServerCircuit(_Circuit):
         connection: ServerConnection,
         our_net_id: str,
         their_net_id: str,
-        tags: Optional[dict] = None,
+        tags: dict | None = None,
         our_port: AmsPort = AmsPort.R0_PLC_TC3,
         their_port: AmsPort = AmsPort.R0_PLC_TC3,
     ):
@@ -1323,7 +1323,7 @@ class ServerCircuit(_Circuit):
         self.server = connection.server
 
     def handle_command(
-        self, header: structs.AoEHeader, request: Optional[structs.T_AdsStructure]
+        self, header: structs.AoEHeader, request: structs.T_AdsStructure | None
     ) -> list:
         """
         Top-level command dispatcher.
