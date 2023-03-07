@@ -200,7 +200,6 @@ def tmc_to_symbols(
     parent_name: str = "",
     parent_bit_offset: int = 0,
 ) -> typing.Generator["Symbol", None, None]:
-
     bit_offset = item.BitOffs[0].bit_offset + parent_bit_offset
     bit_size = item.BitSize[0].bit_size
     byte_offset = bit_offset // 8
@@ -291,9 +290,7 @@ class BasicSymbol(Symbol):
     :class:`ComplexSymbol`.
     """
 
-    ctypes_data_type: typing.Union[
-        type[ctypes.Array], type[ctypes._SimpleCData]
-    ]
+    ctypes_data_type: typing.Union[type[ctypes.Array], type[ctypes._SimpleCData]]
 
     def _configure_data_type(self):
         ctypes_base_type = self.data_type.ctypes_type
@@ -359,7 +356,6 @@ class DataArea:
         memory: PlcMemory = None,
         memory_size: typing.Optional[int] = None,
     ):
-
         self.index_group = index_group
         self.area_type = area_type
         self.symbols = {}
