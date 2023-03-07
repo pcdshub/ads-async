@@ -2,9 +2,6 @@
 ads-async
 ===============================
 
-.. image:: https://img.shields.io/travis/pcdshub/ads-async.svg
-        :target: https://travis-ci.org/pcdshub/ads-async
-
 .. image:: https://img.shields.io/pypi/v/ads-async.svg
         :target: https://pypi.python.org/pypi/ads-async
 
@@ -16,7 +13,7 @@ Asyncio (or sans-i/o) TwinCAT AMS/ADS testing server in pure Python.
 Requirements
 ------------
 
-* Python 3.6+
+* Python 3.9+
 * (Optional) pytmc (for loading .tmc files in the server)
 
 Server Functionality

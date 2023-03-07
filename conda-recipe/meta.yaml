@@ -1,28 +1,33 @@
-{% set data = load_setup_py_data() %}
+{% set package_name = "ads_async" %}
+{% set import_name = "ads_async" %}
+{% set version = load_file_regex(load_file=os.path.join(import_name, "_version.py"), regex_pattern=".*version = '(\S+)'").group(1) %}
 
 package:
-    name    : ads_async
-    version : {{ data.get('version') }}
+  name: {{ package_name }}
+  version: {{ version }}
 
 source:
-    path: ..
+  path: ..
 
 build:
-    number: 1
-    noarch: python
+  number: 0
+  noarch: python
+  script: {{ PYTHON }} -m pip install . -vv
 
 requirements:
-    build:
-      - python >=3.6
-      - setuptools
-    run:
-      - python >=3.6
+  build:
+  - python >=3.9
+  - setuptools_scm
+  - pip
+  run:
+  - python >=3.9
 
 test:
-    imports:
-      - ads_async
-    requires:
-      - pytest
+  imports:
+  - ads_async
+  requires:
+  - pytest
+  - pytmc
 
 about:
   home: https://github.com/pcdshub/ads-async

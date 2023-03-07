@@ -5,7 +5,7 @@ given TwinCAT3 PLC.
 import argparse
 import json
 import logging
-from typing import List, Optional
+from typing import Optional
 
 from .. import constants
 from .utils import setup_connection
@@ -62,7 +62,7 @@ def build_arg_parser(argparser=None):
 
 async def get_symbols(
     plc_hostname: str,
-    symbols: List[str],
+    symbols: list[str],
     our_net_id: str,
     plc_net_id: Optional[str] = None,
     timeout: float = 2.0,
@@ -110,7 +110,7 @@ async def get_symbols(
 
 async def main(
     host: str,
-    symbols: List[str],
+    symbols: list[str],
     net_id: Optional[str] = None,
     our_net_id: Optional[str] = None,
     our_host: Optional[str] = None,

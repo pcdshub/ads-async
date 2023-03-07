@@ -5,7 +5,7 @@ import math
 import sys
 import textwrap
 import typing
-from typing import Optional, Type
+from typing import Optional
 
 from . import constants, log, structs
 from .constants import AdsDataType
@@ -173,7 +173,7 @@ class Symbol:
         return self.read()
 
     @property
-    def memory_range(self) -> typing.Tuple[int, int]:
+    def memory_range(self) -> tuple[int, int]:
         offset = self.offset if not self.pointer else self._dereference_pointer()
         return (offset, offset + self.byte_size)
 
@@ -200,7 +200,6 @@ def tmc_to_symbols(
     parent_name: str = "",
     parent_bit_offset: int = 0,
 ) -> typing.Generator["Symbol", None, None]:
-
     bit_offset = item.BitOffs[0].bit_offset + parent_bit_offset
     bit_size = item.BitSize[0].bit_size
     byte_offset = bit_offset // 8
@@ -245,10 +244,10 @@ def tmc_to_symbols(
         # TODO is this a bug?
         if isinstance(item, pytmc.parser.Symbol):
             sub_items = list(
-                set(sub_item[1] for sub_item in item.walk() if len(sub_item) > 1)
+                {sub_item[1] for sub_item in item.walk() if len(sub_item) > 1}
             )
         else:
-            sub_items = list(set(sub_item[0] for sub_item in data_type.walk()))
+            sub_items = list({sub_item[0] for sub_item in data_type.walk()})
 
         sub_items.sort(key=lambda item: item.bit_offset)
 
@@ -291,9 +290,7 @@ class BasicSymbol(Symbol):
     :class:`ComplexSymbol`.
     """
 
-    ctypes_data_type: typing.Union[
-        typing.Type[ctypes.Array], typing.Type[ctypes._SimpleCData]
-    ]
+    ctypes_data_type: typing.Union[type[ctypes.Array], type[ctypes._SimpleCData]]
 
     def _configure_data_type(self):
         ctypes_base_type = self.data_type.ctypes_type
@@ -310,7 +307,7 @@ class ComplexSymbol(Symbol):
         *,
         struct_size: Optional[int] = None,
         data_type: AdsDataType = AdsDataType.BIGTYPE,
-        cls: Optional[Type[ctypes.Structure]] = None,
+        cls: Optional[type[ctypes.Structure]] = None,
         **kwargs,
     ):
         if struct_size is None:
@@ -348,7 +345,7 @@ class ComplexSymbol(Symbol):
 class DataArea:
     memory: PlcMemory
     index_group: constants.AdsIndexGroup
-    symbols: typing.Dict[str, Symbol]
+    symbols: dict[str, Symbol]
     area_type: str
 
     def __init__(
@@ -359,7 +356,6 @@ class DataArea:
         memory: PlcMemory = None,
         memory_size: typing.Optional[int] = None,
     ):
-
         self.index_group = index_group
         self.area_type = area_type
         self.symbols = {}
@@ -451,8 +447,8 @@ class DataAreaIndexGroup(enum.IntEnum):
 
 
 class Database:
-    data_areas: typing.List[DataArea]
-    index_groups: typing.Dict[constants.AdsIndexGroup, DataArea]
+    data_areas: list[DataArea]
+    index_groups: dict[constants.AdsIndexGroup, DataArea]
 
     def get_symbol_by_name(self, symbol_name) -> Symbol:
         raise KeyError(symbol_name)
@@ -568,7 +564,7 @@ class SimpleDatabase(Database):
     def add_complex_symbol(
         self,
         name: str,
-        cls: Type[ctypes.LittleEndianStructure],
+        cls: type[ctypes.LittleEndianStructure],
         array_length: int = 1,
         comment: Optional[str] = None,
     ) -> ComplexSymbol:
@@ -590,8 +586,8 @@ class SimpleDatabase(Database):
 
 
 def map_symbols_in_memory(
-    memory: PlcMemory, symbols: typing.List[Symbol]
-) -> typing.Dict[int, typing.List[Symbol]]:
+    memory: PlcMemory, symbols: list[Symbol]
+) -> dict[int, list[Symbol]]:
     """
     Map out memory indicating where Symbols are located.
 
@@ -617,7 +613,7 @@ def map_symbols_in_memory(
         # with all its members -> keep parent symbol first)
         return (sym.memory_range[0], -sym.byte_size)
 
-    pointers = set(sym for sym in symbols if sym.pointer)
+    pointers = {sym for sym in symbols if sym.pointer}
     symbols = set(symbols) - pointers
 
     for sym in sorted(symbols, key=symbol_sort):
@@ -633,9 +629,9 @@ def map_symbols_in_memory(
 
 def dump_memory(
     memory: PlcMemory,
-    symbols: typing.List[Symbol],
+    symbols: list[Symbol],
     file=sys.stdout,
-) -> typing.Dict[int, typing.List[Symbol]]:
+) -> dict[int, list[Symbol]]:
     """
     Map out memory indicating where Symbols are located and print to `file`.
 

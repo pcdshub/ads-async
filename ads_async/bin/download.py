@@ -8,7 +8,8 @@ import json
 import logging
 import os
 import sys
-from typing import AsyncGenerator, List, Optional
+from collections.abc import AsyncGenerator
+from typing import Optional
 
 from .. import constants, structs
 from .utils import setup_connection
@@ -102,7 +103,7 @@ class DownloadItem:
 
 async def async_download(
     plc_hostname: str,
-    filenames: List[str],
+    filenames: list[str],
     our_net_id: str,
     plc_net_id: Optional[str] = None,
     timeout: float = 2.0,
@@ -162,7 +163,7 @@ async def async_download(
 
 async def main(
     host: str,
-    filenames: List[str],
+    filenames: list[str],
     save_to: str = ".",
     net_id: Optional[str] = None,
     our_net_id: Optional[str] = None,

@@ -1,0 +1,6 @@
+# These are dependencies of various sphinx extensions for documentation.
+sphinx
+numpydoc
+sphinx-copybutton
+sphinx_rtd_theme
+sphinxcontrib-jquery
