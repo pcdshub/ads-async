@@ -29,6 +29,11 @@ class Role(str, enum.Enum):
     Client = "Client"
     Server = "Server"
 
+    def __str__(self) -> str:
+        return self.value
+
+    __repr__ = __str__
+
 
 class AmsPort(enum.IntEnum):
     LOGGER = 100
@@ -348,7 +353,8 @@ class AdsError(enum.IntEnum):
     CLIENT_SYNCPORTLOCKED = 0x55 + ERR_ADSERRS
 
     @classmethod
-    def _missing_(cls, value):
+    def _missing_(cls, value: int):
+        value = int(value)
         if not 0 <= value <= 0xFFFF:
             return None
 
@@ -460,3 +466,8 @@ SDO_UPLOAD = 0xF302
 class DownloadPath(str, enum.Enum):
     boot = "boot"
     target = "target"
+
+    def __str__(self) -> str:
+        return self.value
+
+    __repr__ = __str__
