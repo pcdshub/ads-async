@@ -13,7 +13,7 @@ Types of Contributions
 Report Bugs
 ~~~~~~~~~~~
 
-Report bugs at https://github.com/pcdshub/ads_async/issues.
+Report bugs at https://github.com/pcdshub/ads-async/issues.
 
 If you are reporting a bug, please include:
 
@@ -42,7 +42,7 @@ or even on the web in blog posts, articles, and such.
 Submit Feedback
 ~~~~~~~~~~~~~~~
 
-The best way to send feedback is to file an issue at https://github.com/pcdshub/ads_async/issues.
+The best way to send feedback is to file an issue at https://github.com/pcdshub/ads-async/issues.
 
 If you are proposing a feature:
 
@@ -54,17 +54,17 @@ If you are proposing a feature:
 Get Started!
 ------------
 
-Ready to contribute? Here's how to set up `ads_async` for local development.
+Ready to contribute? Here's how to set up `ads-async` for local development.
 
-1. Fork the `ads_async` repo on GitHub.
+1. Fork the `ads-async` repo on GitHub.
 2. Clone your fork locally::
 
-    $ git clone git@github.com:your_name_here/ads_async.git
+    $ git clone git@github.com:your_name_here/ads-async.git
 
 3. Install your local copy into a new conda environment. Assuming you have conda installed, this is how you set up your fork for local development::
 
-    $ conda create -n ads_async python=3.9 pip
-    $ cd ads_async/
+    $ conda create -n ads-async python=3.9 pip
+    $ cd ads-async/
     $ pip install -e .
 
 4. Create a branch for local development::
