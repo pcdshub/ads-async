@@ -1,4 +1,4 @@
-{% set package_name = "ads_async" %}
+{% set package_name = "ads-async" %}
 {% set import_name = "ads_async" %}
 {% set version = load_file_regex(load_file=os.path.join(import_name, "_version.py"), regex_pattern=".*version = '(\S+)'").group(1) %}
 
