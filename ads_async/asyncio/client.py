@@ -368,7 +368,7 @@ class AsyncioClientCircuit:
         The AMS Net ID of the target.
 
     default_port : AmsPort, optional
-        The default port to use in communciation (R0_PLC_TC3 port).
+        The default port to use in communication (R0_PLC_TC3 port).
     """
 
     circuit: protocol.ClientCircuit
@@ -856,6 +856,8 @@ class AsyncioClientConnection:
         our_net_id: str | None = None,  # can be determined later
         reconnect_rate: int | None = 10,
         request_timeout: float = 2.0,
+        local_connection: bool | None = None,
+        our_ads_port: int | None = None,
     ):
         self.connection = protocol.ClientConnection(
             their_address=their_address,
@@ -873,6 +875,12 @@ class AsyncioClientConnection:
         self._disconnect_event = asyncio.Event()
         self.request_timeout = request_timeout
         self._circuits = {}
+        self._our_ads_port = our_ads_port or AmsPort.R0_PLC_TC3
+
+        if local_connection is None:
+            local_connection = their_address[0] in {"localhost", "127.0.0.1"}
+
+        self._local_connection = local_connection
 
     async def __aenter__(self):
         await self.wait_for_connection()
@@ -884,7 +892,7 @@ class AsyncioClientConnection:
     def __getitem__(self, key):
         return self.get_circuit(key)
 
-    def get_circuit(self, net_id: str | None = None):
+    def get_circuit(self, net_id: str | structs.AmsNetId | None = None):
         """
         Get a circuit to the given target Net ID.
 
@@ -906,6 +914,8 @@ class AsyncioClientConnection:
 
         circuit = AsyncioClientCircuit(connection=self, net_id=net_id)
         self._circuits[net_id] = circuit
+        assert hasattr(circuit.circuit, "our_port")
+        circuit.circuit.our_port = self._our_ads_port
         return circuit
 
     async def _circuit_cleanup(self, net_id):
@@ -952,6 +962,56 @@ class AsyncioClientConnection:
             self.log.debug("Reconnecting in %d seconds...", self.reconnect_rate)
             await asyncio.sleep(self.reconnect_rate)
 
+    async def _reserve_port_from_router(
+        self,
+    ) -> structs.AmsAddr:
+        """Reserve an ADS port for communication."""
+        to_send = bytes(
+            [
+                # AMS_TCP_PORT_CONNECT 0x1000 -> 0, 16
+                0,
+                16,
+                # data length 0x00 00 00 02 -> 2, 0, 0, 0
+                2,
+                0,
+                0,
+                0,
+                # Data: Requested ADS Port (0 to let the server assign it)
+                # TODO this is only for "local" mode
+                0,
+                0,
+            ]
+        )
+        await self._send_raw(to_send)
+        data = await self.reader.read(14)
+        header_bytes = 6
+        header = data[:header_bytes]
+        if tuple(header) != (0, 16, 8, 0, 0, 0):
+            raise exceptions.AdsPortRequestFailureException(
+                "Unexpected header when requesting ADS port from router"
+            )
+        return structs.AmsAddr.from_buffer_copy(data[header_bytes:])
+
+    async def _release_assigned_port(
+        self,
+    ) -> structs.AmsAddr:
+        """Release a previously-reserved ADS port for communication."""
+        to_send = bytes(
+            [
+                # AMS_TCP_PORT_CLOSE 0x0001 -> 1, 0
+                1,
+                0,
+                # data length 0x00 00 00 02 -> 2, 0, 0, 0
+                2,
+                0,
+                0,
+                0,
+                # Data: Release this ADS Port (0 to let the server assign it)
+                *bytes(ctypes.c_uint16(self._our_ads_port)),
+            ]
+        )
+        await self._send_raw(to_send)
+
     async def _connected_loop(self):
         self.log.debug("Connected")
 
@@ -961,7 +1021,19 @@ class AsyncioClientConnection:
         if isinstance(addr, ipaddress.IPv6Address):
             our_ip = f"[{our_ip}]"
 
+        if self._local_connection:
+            (
+                self.connection.our_net_id,
+                self._our_ads_port,
+            ) = await self._reserve_port_from_router()
+            self.log.debug(
+                "Reserved local connection settings from router: %s (port=%s)",
+                self.connection.our_net_id,
+                our_port,
+            )
+
         self.connection.our_address = (our_ip, our_port)
+
         if self.connection.our_net_id is None:
             self.connection.our_net_id = f"{our_ip}.1.1"
             self.log.debug(
@@ -970,18 +1042,34 @@ class AsyncioClientConnection:
 
         self._disconnect_event.clear()
         self._connect_event.set()
-        while True:
-            data = await self.reader.read(1024)
-            if not len(data):
-                self.connection.disconnected()
-                self.log.debug("Disconnected")
-                self._connect_event.clear()
-                self._disconnect_event.set()
-                break
 
-            for header, item in self.connection.received_data(data):
-                circuit = self.get_circuit(header.source.net_id)
-                await circuit._handle_command(header, item)
+        def disconnect():
+            self.connection.disconnected()
+            self.log.debug("Disconnected")
+            self._connect_event.clear()
+            self._disconnect_event.set()
+
+        try:
+            while True:
+                data = await self.reader.read(1024)
+                if not len(data):
+                    disconnect()
+                    break
+
+                for header, item in self.connection.received_data(data):
+                    circuit = self.get_circuit(header.source.net_id)
+                    await circuit._handle_command(header, item)
+        finally:
+            # TODO this should probably go elsewhere
+            if not self._disconnect_event.is_set():
+                if self._local_connection:
+                    try:
+                        await self._release_assigned_port()
+                    except Exception as ex:
+                        self.log.debug(
+                            "Exception while releasing port; ignoring", exc_info=ex
+                        )
+                disconnect()
 
     async def _send_raw(self, bytes_to_send: bytes):
         """Send bytes over the wire."""
