@@ -996,6 +996,10 @@ class AsyncioClientConnection:
         self,
     ) -> structs.AmsAddr:
         """Release a previously-reserved ADS port for communication."""
+        if not self._local_connection:
+            return
+
+        self.log.debug("Releasing previously-reserved port %s", self._our_ads_port)
         to_send = bytes(
             [
                 # AMS_TCP_PORT_CLOSE 0x0001 -> 1, 0
@@ -1062,13 +1066,14 @@ class AsyncioClientConnection:
         finally:
             # TODO this should probably go elsewhere
             if not self._disconnect_event.is_set():
-                if self._local_connection:
-                    try:
-                        await self._release_assigned_port()
-                    except Exception as ex:
-                        self.log.debug(
-                            "Exception while releasing port; ignoring", exc_info=ex
-                        )
+                try:
+                    await self._release_assigned_port()
+                except (ConnectionResetError, ConnectionAbortedError):
+                    ...
+                except Exception as ex:
+                    self.log.debug(
+                        "Exception while releasing port; ignoring", exc_info=ex
+                    )
                 disconnect()
 
     async def _send_raw(self, bytes_to_send: bytes):
